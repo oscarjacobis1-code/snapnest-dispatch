@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SnapNest Dispatch · Control Center</title><link rel="stylesheet" href="/styles.css"></head><body><main class="shell">
+<div class="topbar"><div class="brand"><div class="logo">SD</div><div><strong>SnapNest Dispatch</strong><div class="muted">Control Center · Demo Base</div></div></div><div class="row"><a class="btn secondary" href="/customer.html">Customer simulator</a><a class="btn secondary" href="/driver.html?driver=d1">Driver simulator</a><button id="nightMode" class="btn secondary">Night automation OFF</button></div></div>
+<section id="stats" class="stats"></section>
+<section class="grid"><div class="card"><h2>Live fleet</h2><div id="map" class="map"><div class="road r1"></div><div class="road r2"></div></div></div><div class="card"><h2>Bookings</h2><div id="bookings"></div></div></section>
+<section class="grid" style="margin-top:18px"><div class="card"><h2>Drivers</h2><div style="overflow:auto"><table class="table"><thead><tr><th>Driver</th><th>Status</th><th>Queue</th><th>Declines</th></tr></thead><tbody id="driversBody"></tbody></table></div></div><div class="card"><h2>Realtime activity</h2><div id="events" class="events"></div></div></section>
+</main><script type="module" src="/app.js"></script></body></html>
