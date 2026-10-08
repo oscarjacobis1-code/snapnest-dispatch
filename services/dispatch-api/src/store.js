@@ -1,7 +1,6 @@
 import { BOOKING_STATUS, DRIVER_STATUS, chooseNextDriver } from './dispatch-engine.js';
 
 const now = Date.now();
-
 export const state = {
   nightMode: false,
   drivers: [
@@ -13,137 +12,51 @@ export const state = {
   bookings: [],
   events: []
 };
-
 let sequence = 1000;
 const listeners = new Set();
-
-export function subscribe(listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
+export function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
 export function emit(type, payload) {
   const event = { id: ++sequence, type, at: new Date().toISOString(), payload };
-  state.events.unshift(event);
-  state.events = state.events.slice(0, 80);
+  state.events.unshift(event); state.events = state.events.slice(0, 80);
   for (const listener of listeners) listener(event);
   return event;
 }
-
-export function publicState() {
-  return {
-    nightMode: state.nightMode,
-    drivers: state.drivers,
-    bookings: state.bookings,
-    events: state.events.slice(0, 25)
-  };
-}
-
-export function setNightMode(enabled) {
-  state.nightMode = Boolean(enabled);
-  emit('night_mode.changed', { enabled: state.nightMode });
-  return state.nightMode;
-}
-
+export function publicState() { return { nightMode: state.nightMode, drivers: state.drivers, bookings: state.bookings, events: state.events.slice(0, 25) }; }
+export function setNightMode(enabled) { state.nightMode = Boolean(enabled); emit('night_mode.changed', { enabled: state.nightMode }); return state.nightMode; }
 export function setDriverStatus(driverId, status) {
-  const driver = state.drivers.find((d) => d.id === driverId);
-  if (!driver) throw new Error('Driver not found.');
-  const allowed = new Set(Object.values(DRIVER_STATUS));
-  if (!allowed.has(status)) throw new Error('Invalid driver status.');
-  driver.status = status;
-  driver.availableSince = status === DRIVER_STATUS.AVAILABLE ? Date.now() : null;
-  emit('driver.status', { driverId, status });
-  return driver;
+  const driver = state.drivers.find((d) => d.id === driverId); if (!driver) throw new Error('Driver not found.');
+  const allowed = new Set(Object.values(DRIVER_STATUS)); if (!allowed.has(status)) throw new Error('Invalid driver status.');
+  driver.status = status; driver.availableSince = status === DRIVER_STATUS.AVAILABLE ? Date.now() : null;
+  emit('driver.status', { driverId, status }); return driver;
 }
-
+export function updateDriverLocation(driverId, location) {
+  const driver = state.drivers.find((d) => d.id === driverId); if (!driver) throw new Error('Driver not found.');
+  driver.location = { lat: Number(location.lat), lng: Number(location.lng), accuracyM: Number(location.accuracyM ?? 0), capturedAt: new Date().toISOString() };
+  emit('driver.location', { driverId, ...driver.location }); return driver.location;
+}
 function offerNextDriver(booking) {
-  const next = chooseNextDriver({
-    drivers: state.drivers,
-    booking,
-    attemptedDriverIds: booking.attemptedDriverIds
-  });
-
-  if (!next) {
-    booking.status = BOOKING_STATUS.UNFULFILLED;
-    booking.currentOfferDriverId = null;
-    emit('booking.unfulfilled', { bookingId: booking.id });
-    return null;
-  }
-
-  const driver = state.drivers.find((d) => d.id === next.id);
-  driver.status = DRIVER_STATUS.OFFERED;
-  booking.status = BOOKING_STATUS.OFFERING;
-  booking.currentOfferDriverId = driver.id;
-  booking.attemptedDriverIds.push(driver.id);
-  booking.offerExpiresAt = Date.now() + 20_000;
-  emit('booking.offered', {
-    bookingId: booking.id,
-    driverId: driver.id,
-    distanceKm: next.distanceKm,
-    score: next.dispatchScore
-  });
-  return driver;
+  const next = chooseNextDriver({ drivers: state.drivers, booking, attemptedDriverIds: booking.attemptedDriverIds });
+  if (!next) { booking.status = BOOKING_STATUS.UNFULFILLED; booking.currentOfferDriverId = null; emit('booking.unfulfilled', { bookingId: booking.id }); return null; }
+  const driver = state.drivers.find((d) => d.id === next.id); driver.status = DRIVER_STATUS.OFFERED;
+  booking.status = BOOKING_STATUS.OFFERING; booking.currentOfferDriverId = driver.id; booking.attemptedDriverIds.push(driver.id); booking.offerExpiresAt = Date.now() + 20_000;
+  emit('booking.offered', { bookingId: booking.id, driverId: driver.id, distanceKm: next.distanceKm, score: next.dispatchScore }); return driver;
 }
-
 export function createBooking(input) {
-  const booking = {
-    id: `B${++sequence}`,
-    tenantId: 'demo-base',
-    source: input.source ?? 'web',
-    passengerName: input.passengerName,
-    passengers: input.passengers,
-    notes: input.notes,
-    pickup: input.pickup,
-    destination: input.destination,
-    status: BOOKING_STATUS.PENDING,
-    createdAt: new Date().toISOString(),
-    assignedDriverId: null,
-    currentOfferDriverId: null,
-    attemptedDriverIds: []
-  };
-  state.bookings.unshift(booking);
-  emit('booking.created', { bookingId: booking.id, source: booking.source });
-  offerNextDriver(booking);
-  return booking;
+  const booking = { id: `B${++sequence}`, tenantId: 'demo-base', source: input.source ?? 'web', passengerName: input.passengerName, passengerPhone: input.passengerPhone ?? '', passengers: input.passengers, notes: input.notes, pickup: input.pickup, destination: input.destination, status: BOOKING_STATUS.PENDING, createdAt: new Date().toISOString(), assignedDriverId: null, currentOfferDriverId: null, attemptedDriverIds: [] };
+  state.bookings.unshift(booking); emit('booking.created', { bookingId: booking.id, source: booking.source }); offerNextDriver(booking); return booking;
 }
-
 export function respondToOffer({ bookingId, driverId, accept }) {
-  const booking = state.bookings.find((b) => b.id === bookingId);
-  if (!booking) throw new Error('Booking not found.');
+  const booking = state.bookings.find((b) => b.id === bookingId); if (!booking) throw new Error('Booking not found.');
   if (booking.currentOfferDriverId !== driverId) throw new Error('This offer is no longer active.');
-  const driver = state.drivers.find((d) => d.id === driverId);
-  if (!driver) throw new Error('Driver not found.');
-
-  if (accept) {
-    booking.status = BOOKING_STATUS.ASSIGNED;
-    booking.assignedDriverId = driver.id;
-    booking.currentOfferDriverId = null;
-    booking.assignedAt = new Date().toISOString();
-    driver.status = DRIVER_STATUS.BUSY;
-    emit('booking.assigned', { bookingId, driverId });
-    return booking;
-  }
-
-  driver.status = DRIVER_STATUS.AVAILABLE;
-  driver.recentDeclines = (driver.recentDeclines ?? 0) + 1;
-  driver.availableSince = Date.now();
-  booking.currentOfferDriverId = null;
-  emit('booking.declined', { bookingId, driverId });
-  offerNextDriver(booking);
-  return booking;
+  const driver = state.drivers.find((d) => d.id === driverId); if (!driver) throw new Error('Driver not found.');
+  if (accept) { booking.status = BOOKING_STATUS.ASSIGNED; booking.assignedDriverId = driver.id; booking.currentOfferDriverId = null; booking.assignedAt = new Date().toISOString(); driver.status = DRIVER_STATUS.BUSY; emit('booking.assigned', { bookingId, driverId }); return booking; }
+  driver.status = DRIVER_STATUS.AVAILABLE; driver.recentDeclines = (driver.recentDeclines ?? 0) + 1; driver.availableSince = Date.now(); booking.currentOfferDriverId = null; emit('booking.declined', { bookingId, driverId }); offerNextDriver(booking); return booking;
 }
-
-export function expireOffers(now = Date.now()) {
+export function expireOffers(nowMs = Date.now()) {
   for (const booking of state.bookings) {
-    if (booking.status !== BOOKING_STATUS.OFFERING || !booking.offerExpiresAt || booking.offerExpiresAt > now) continue;
-    const driverId = booking.currentOfferDriverId;
-    const driver = state.drivers.find((d) => d.id === driverId);
-    if (driver?.status === DRIVER_STATUS.OFFERED) {
-      driver.status = DRIVER_STATUS.AVAILABLE;
-      driver.availableSince = Date.now();
-    }
-    booking.currentOfferDriverId = null;
-    emit('booking.offer_expired', { bookingId: booking.id, driverId });
-    offerNextDriver(booking);
+    if (booking.status !== BOOKING_STATUS.OFFERING || !booking.offerExpiresAt || booking.offerExpiresAt > nowMs) continue;
+    const driverId = booking.currentOfferDriverId; const driver = state.drivers.find((d) => d.id === driverId);
+    if (driver?.status === DRIVER_STATUS.OFFERED) { driver.status = DRIVER_STATUS.AVAILABLE; driver.availableSince = Date.now(); }
+    booking.currentOfferDriverId = null; emit('booking.offer_expired', { bookingId: booking.id, driverId }); offerNextDriver(booking);
   }
 }
