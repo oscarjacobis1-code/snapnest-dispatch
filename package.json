@@ -1,0 +1,14 @@
+{
+  "name": "snapnest-dispatch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node services/dispatch-api/src/server.js",
+    "start": "node services/dispatch-api/src/server.js",
+    "test": "node --test services/dispatch-api/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
