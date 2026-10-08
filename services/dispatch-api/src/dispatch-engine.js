@@ -27,10 +27,6 @@ export function haversineKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/**
- * Lower score wins. Proximity dominates, while queue position prevents the
- * nearest driver from receiving every job forever.
- */
 export function rankDrivers({ drivers, pickup, now = Date.now() }) {
   return drivers
     .filter((d) => d.status === DRIVER_STATUS.AVAILABLE && d.location)
@@ -55,6 +51,7 @@ export function parseStructuredTaxiRequest(input = {}) {
   const pickup = input.pickup;
   const destination = input.destination;
   const passengerName = String(input.passengerName ?? '').trim();
+  const passengerPhone = String(input.passengerPhone ?? '').trim().slice(0, 32);
   const passengers = Math.max(1, Math.min(8, Number(input.passengers ?? 1) || 1));
   const notes = String(input.notes ?? '').trim().slice(0, 300);
 
@@ -67,6 +64,7 @@ export function parseStructuredTaxiRequest(input = {}) {
 
   return {
     passengerName: passengerName || 'Guest',
+    passengerPhone,
     passengers,
     notes,
     pickup: {
