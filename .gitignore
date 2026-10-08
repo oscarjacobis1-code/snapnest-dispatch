@@ -1,0 +1,10 @@
+.env
+.env.*
+node_modules/
+dist/
+build/
+.gradle/
+.idea/
+*.iml
+.DS_Store
+local.properties
