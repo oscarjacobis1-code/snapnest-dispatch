@@ -11,6 +11,7 @@ export function createRuntimeStore(env = process.env) {
     store: {
       mode: 'memory',
       publicState: async () => ({ mode: 'memory', ...memory.publicState() }),
+      activeOfferForDriver: async (driverId) => memory.publicState().bookings.find((b) => b.currentOfferDriverId === driverId) ?? null,
       setNightMode: async (v) => memory.setNightMode(v),
       setDriverStatus: async (id, status) => memory.setDriverStatus(id, status),
       updateDriverLocation: async (id, location) => memory.updateDriverLocation(id, location),
