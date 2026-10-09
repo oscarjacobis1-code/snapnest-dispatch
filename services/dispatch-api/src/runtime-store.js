@@ -17,6 +17,8 @@ export function createRuntimeStore(env = process.env) {
       updateDriverLocation: async (id, location) => memory.updateDriverLocation(id, location),
       createBooking: async (input) => memory.createBooking(input),
       respondToOffer: async (input) => memory.respondToOffer(input),
+      startTrip: async (input) => memory.startTrip(input),
+      completeTrip: async (input) => memory.completeTrip(input),
       expireOffers: async (now) => memory.expireOffers(now),
       subscribe: memory.subscribe,
       sessionContext: async () => demoContext,
