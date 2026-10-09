@@ -15,7 +15,9 @@ class SessionStore(context: Context) {
         val baseUrl: String,
         val accessToken: String,
         val refreshToken: String,
-        val driverId: String
+        val driverId: String,
+        val driverName: String = "",
+        val vehicle: String = ""
     )
 
     private val prefs = context.applicationContext.getSharedPreferences("dispatch_secure", Context.MODE_PRIVATE)
@@ -64,6 +66,8 @@ class SessionStore(context: Context) {
             .putString("access_token", encrypt(session.accessToken))
             .putString("refresh_token", encrypt(session.refreshToken))
             .putString("driver_id", encrypt(session.driverId))
+            .putString("driver_name", encrypt(session.driverName))
+            .putString("vehicle", encrypt(session.vehicle))
             .apply()
     }
 
@@ -72,7 +76,9 @@ class SessionStore(context: Context) {
         val access = prefs.getString("access_token", null) ?: return null
         val refresh = prefs.getString("refresh_token", null) ?: return null
         val driver = prefs.getString("driver_id", null) ?: return null
-        Session(decrypt(base), decrypt(access), decrypt(refresh), decrypt(driver))
+        val name = prefs.getString("driver_name", null)?.let(::decrypt).orEmpty()
+        val vehicle = prefs.getString("vehicle", null)?.let(::decrypt).orEmpty()
+        Session(decrypt(base), decrypt(access), decrypt(refresh), decrypt(driver), name, vehicle)
     }.getOrElse {
         clear()
         null
