@@ -15,6 +15,20 @@ object DriverApi {
         val expiresAt: Long?
     )
 
+    data class PttConnection(
+        val enabled: Boolean,
+        val provider: String,
+        val serverUrl: String = "",
+        val participantToken: String = "",
+        val roomName: String = ""
+    )
+
+    data class PttLease(
+        val granted: Boolean,
+        val leaseToken: String = "",
+        val expiresAt: Long = 0L
+    )
+
     private class ApiException(val status: Int, message: String) : IllegalStateException(message)
 
     private fun connection(url: String, method: String, token: String? = null): HttpURLConnection {
@@ -148,5 +162,40 @@ object DriverApi {
             }
             readJson(conn)
         }
+    }
+
+    fun pttConnection(store: SessionStore): PttConnection = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/ptt/token", "GET", session.accessToken)
+        val json = readJson(conn)
+        PttConnection(
+            enabled = json.optBoolean("enabled", false),
+            provider = json.optString("provider", "none"),
+            serverUrl = json.optString("serverUrl", ""),
+            participantToken = json.optString("participantToken", ""),
+            roomName = json.optString("roomName", "")
+        )
+    }
+
+    fun acquirePttFloor(store: SessionStore): PttLease = pttFloorRequest(store, "acquire", null)
+    fun heartbeatPttFloor(store: SessionStore, leaseToken: String): PttLease = pttFloorRequest(store, "heartbeat", leaseToken)
+    fun releasePttFloor(store: SessionStore, leaseToken: String): Boolean = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/ptt/floor/release", "POST", session.accessToken)
+        conn.doOutput = true
+        conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("leaseToken", leaseToken).toString()) }
+        readJson(conn).optBoolean("released", false)
+    }
+
+    private fun pttFloorRequest(store: SessionStore, action: String, leaseToken: String?): PttLease = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/ptt/floor/$action", "POST", session.accessToken)
+        conn.doOutput = true
+        conn.outputStream.bufferedWriter().use { writer ->
+            writer.write(if (leaseToken == null) "{}" else JSONObject().put("leaseToken", leaseToken).toString())
+        }
+        val json = readJson(conn)
+        PttLease(
+            granted = json.optBoolean("granted", false),
+            leaseToken = json.optString("leaseToken", ""),
+            expiresAt = json.optLong("expiresAt", 0L)
+        )
     }
 }
