@@ -5,7 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object DriverApi {
-    data class Session(val accessToken: String, val driverId: String)
+    private class ApiException(val status: Int, message: String) : IllegalStateException(message)
 
     private fun connection(url: String, method: String, token: String? = null): HttpURLConnection {
         return (URL(url).openConnection() as HttpURLConnection).apply {
@@ -19,33 +19,83 @@ object DriverApi {
     }
 
     private fun readJson(conn: HttpURLConnection): JSONObject {
-        val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+        val status = conn.responseCode
+        val stream = if (status in 200..299) conn.inputStream else conn.errorStream
         val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         val json = if (raw.isBlank()) JSONObject() else JSONObject(raw)
-        if (conn.responseCode !in 200..299) throw IllegalStateException(json.optString("error", "Request failed (${conn.responseCode})"))
+        if (status !in 200..299) throw ApiException(status, json.optString("error", "Request failed ($status)"))
         return json
     }
 
-    fun login(baseUrl: String, email: String, password: String): Session {
-        val conn = connection("${baseUrl.trimEnd('/')}/api/auth/login", "POST")
-        conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer -> writer.write(JSONObject().put("email", email).put("password", password).toString()) }
-        val json = readJson(conn)
+    private fun sessionFromJson(baseUrl: String, json: JSONObject): SessionStore.Session {
         val driver = json.optJSONObject("driver") ?: throw IllegalStateException("This account is not linked to a driver.")
-        return Session(json.getString("accessToken"), driver.getString("id"))
+        val access = json.optString("accessToken")
+        val refresh = json.optString("refreshToken")
+        if (access.isBlank() || refresh.isBlank()) throw IllegalStateException("The server did not return a complete driver session.")
+        return SessionStore.Session(baseUrl.trimEnd('/'), access, refresh, driver.getString("id"))
     }
 
-    fun postLocation(baseUrl: String, token: String, driverId: String, lat: Double, lng: Double, accuracyM: Float) {
-        val conn = connection("${baseUrl.trimEnd('/')}/api/drivers/$driverId/location", "POST", token)
+    fun login(baseUrl: String, email: String, password: String): SessionStore.Session {
+        val cleanBase = baseUrl.trimEnd('/')
+        val conn = connection("$cleanBase/api/auth/login", "POST")
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer -> writer.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString()) }
-        readJson(conn)
+        conn.outputStream.bufferedWriter().use { writer ->
+            writer.write(JSONObject().put("email", email).put("password", password).toString())
+        }
+        return sessionFromJson(cleanBase, readJson(conn))
     }
 
-    fun postStatus(baseUrl: String, token: String, driverId: String, status: String) {
-        val conn = connection("${baseUrl.trimEnd('/')}/api/drivers/$driverId/status", "POST", token)
+    private fun refresh(session: SessionStore.Session): SessionStore.Session {
+        val conn = connection("${session.baseUrl}/api/auth/refresh", "POST")
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer -> writer.write(JSONObject().put("status", status).toString()) }
-        readJson(conn)
+        conn.outputStream.bufferedWriter().use { writer ->
+            writer.write(JSONObject().put("refreshToken", session.refreshToken).toString())
+        }
+        return sessionFromJson(session.baseUrl, readJson(conn))
+    }
+
+    private fun <T> withRefresh(store: SessionStore, request: (SessionStore.Session) -> T): T {
+        val initial = store.load() ?: throw IllegalStateException("Driver session expired. Sign in again.")
+        try {
+            return request(initial)
+        } catch (error: ApiException) {
+            if (error.status != 401) throw error
+        }
+
+        val refreshed = try {
+            refresh(initial)
+        } catch (error: Exception) {
+            store.clear()
+            throw IllegalStateException("Driver session expired. Sign in again.", error)
+        }
+        store.save(refreshed)
+        return try {
+            request(refreshed)
+        } catch (error: ApiException) {
+            if (error.status == 401) store.clear()
+            throw error
+        }
+    }
+
+    fun postLocation(store: SessionStore, lat: Double, lng: Double, accuracyM: Float) {
+        withRefresh(store) { session ->
+            val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/location", "POST", session.accessToken)
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { writer ->
+                writer.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString())
+            }
+            readJson(conn)
+        }
+    }
+
+    fun postStatus(store: SessionStore, status: String) {
+        withRefresh(store) { session ->
+            val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/status", "POST", session.accessToken)
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { writer ->
+                writer.write(JSONObject().put("status", status).toString())
+            }
+            readJson(conn)
+        }
     }
 }
