@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,9 @@ function json(res, status, body) {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(data),
-    'access-control-allow-origin': '*'
+    'access-control-allow-origin': '*',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer'
   });
   res.end(data);
 }
@@ -39,8 +42,20 @@ async function serveStatic(res, pathname) {
   const safe = normalize(target).replace(/^([.][.][/\\])+/, '');
   const full = join(publicDir, safe);
   if (!full.startsWith(publicDir)) return false;
-  try { const data = await readFile(full); res.writeHead(200, { 'content-type': mime[extname(full)] || 'application/octet-stream' }); res.end(data); return true; }
-  catch { return false; }
+  try {
+    const data = await readFile(full);
+    res.writeHead(200, {
+      'content-type': mime[extname(full)] || 'application/octet-stream',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'x-frame-options': 'DENY',
+      'cache-control': extname(full) === '.html' ? 'no-cache' : 'public, max-age=300'
+    });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function bearer(req) {
@@ -48,12 +63,29 @@ function bearer(req) {
   return value.toLowerCase().startsWith('bearer ') ? value.slice(7).trim() : '';
 }
 
+const authCache = new Map();
+const AUTH_CACHE_MS = 60_000;
+function tokenCacheKey(token) { return createHash('sha256').update(token).digest('base64url'); }
+function cacheAuth(key, context) {
+  authCache.set(key, { context, expiresAt: Date.now() + AUTH_CACHE_MS });
+  if (authCache.size > 500) authCache.delete(authCache.keys().next().value);
+}
+
 async function authContext(req) {
   if (!config.requireAuth) return { user: { id: 'demo', email: 'demo@snapnest.local' }, membership: { role: 'admin' }, driver: null };
   const token = bearer(req);
   if (!token) throw new HttpError(401, 'Sign in required.');
-  try { return await store.sessionContext(token); }
-  catch (error) { throw new HttpError(401, error.message || 'Invalid session.'); }
+  const cacheKey = tokenCacheKey(token);
+  const cached = authCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.context;
+  if (cached) authCache.delete(cacheKey);
+  try {
+    const context = await store.sessionContext(token);
+    cacheAuth(cacheKey, context);
+    return context;
+  } catch (error) {
+    throw new HttpError(401, error.message || 'Invalid session.');
+  }
 }
 
 function requireRole(context, roles) {
@@ -83,7 +115,11 @@ function checkBookingRate(req) {
   const now = Date.now();
   const current = bookingRate.get(key) ?? { start: now, count: 0 };
   if (now - current.start > 60_000) { current.start = now; current.count = 0; }
-  current.count += 1; bookingRate.set(key, current);
+  current.count += 1;
+  bookingRate.set(key, current);
+  if (bookingRate.size > 5000) {
+    for (const [ip, value] of bookingRate) if (now - value.start > 120_000) bookingRate.delete(ip);
+  }
   if (current.count > 20) throw new HttpError(429, 'Too many booking requests. Try again shortly.');
 }
 
@@ -128,7 +164,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': '*' });
       res.write(`event: snapshot\ndata: ${JSON.stringify(filterState(await store.publicState(), context))}\n\n`);
       const unsubscribe = store.subscribe((event) => res.write(`event: update\ndata: ${JSON.stringify(event)}\n\n`));
-      req.on('close', unsubscribe); return;
+      req.on('close', unsubscribe);
+      return;
     }
 
     if (req.method === 'POST' && path === '/api/bookings') {
@@ -148,25 +185,32 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && path === '/api/night-mode') {
-      const context = await authContext(req); requireRole(context, ['admin', 'dispatcher']);
-      const input = await body(req); return json(res, 200, { nightMode: await store.setNightMode(input.enabled) });
+      const context = await authContext(req);
+      requireRole(context, ['admin', 'dispatcher']);
+      const input = await body(req);
+      return json(res, 200, { nightMode: await store.setNightMode(input.enabled) });
     }
 
     const locationMatch = path.match(/^\/api\/drivers\/([^/]+)\/location$/);
     if (req.method === 'POST' && locationMatch) {
-      const context = await authContext(req); requireDriverAccess(context, locationMatch[1]);
+      const context = await authContext(req);
+      requireDriverAccess(context, locationMatch[1]);
       return json(res, 200, await store.updateDriverLocation(locationMatch[1], await body(req)));
     }
 
     const statusMatch = path.match(/^\/api\/drivers\/([^/]+)\/status$/);
     if (req.method === 'POST' && statusMatch) {
-      const context = await authContext(req); requireDriverAccess(context, statusMatch[1]);
-      const input = await body(req); return json(res, 200, await store.setDriverStatus(statusMatch[1], input.status));
+      const context = await authContext(req);
+      requireDriverAccess(context, statusMatch[1]);
+      const input = await body(req);
+      return json(res, 200, await store.setDriverStatus(statusMatch[1], input.status));
     }
 
     const responseMatch = path.match(/^\/api\/bookings\/([^/]+)\/offer-response$/);
     if (req.method === 'POST' && responseMatch) {
-      const context = await authContext(req); const input = await body(req); requireDriverAccess(context, input.driverId);
+      const context = await authContext(req);
+      const input = await body(req);
+      requireDriverAccess(context, input.driverId);
       return json(res, 200, await store.respondToOffer({ bookingId: responseMatch[1], driverId: input.driverId, accept: Boolean(input.accept) }));
     }
 
