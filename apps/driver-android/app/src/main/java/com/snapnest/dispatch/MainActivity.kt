@@ -311,7 +311,7 @@ class MainActivity : Activity() {
         }
         sheet.addView(statusText)
 
-        scroll.addView(sheet, ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT))
+        scroll.addView(sheet, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
         applySnapshot(currentSnapshot ?: DriverApi.DriverSnapshot(session.driverName.ifBlank { "Driver" }, session.vehicle, "unknown", null, null))
