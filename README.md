@@ -74,8 +74,12 @@ docs/
   MVP.md               MVP scope and rollout
 ```
 
-## What is still intentionally not faked
+## Production field-test deployment
 
-v0.2 does **not** pretend that production WhatsApp, live PTT audio, or AI phone calls are finished. Those require real provider credentials and field testing. The current code establishes the secure dispatch/data/auth/GPS foundation they will plug into.
+The Android driver build bakes in `https://snapnest-dispatch.onrender.com`; drivers do not enter or change an API URL. Override it only for an intentional non-production build with Gradle property `DISPATCH_API_URL`.
+
+Live PTT is enabled only when Render has all three server-side LiveKit values: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`. No LiveKit secret or Supabase secret is compiled into the web or Android clients.
+
+Production WhatsApp and AI phone-call adapters remain outside this field-test release. The dispatcher control center, Supabase auth/storage, driver GPS, offer acceptance, trip lifecycle, and LiveKit PTT path are included.
 
 Built by **SnapNest Digital Solutions**.

@@ -16,7 +16,6 @@ import android.widget.*
 
 class MainActivity : Activity() {
     private lateinit var statusText: TextView
-    private lateinit var baseInput: EditText
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var sessionStore: SessionStore
@@ -42,11 +41,6 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(0, 0, 0, 20)
         }
-        baseInput = EditText(this).apply {
-            hint = "Dispatch API URL"
-            setText(saved?.baseUrl.orEmpty())
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-        }
         emailInput = EditText(this).apply {
             hint = "Driver email"
             inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
@@ -67,21 +61,21 @@ class MainActivity : Activity() {
             }
         }
         statusText = TextView(this).apply {
-            text = if (saved != null) "Saved secure driver session found." else "Not signed in."
+            text = if (saved != null) "Saved secure driver session found." else "Connected to the SnapNest Dispatch live service."
             setPadding(0, 16, 0, 0)
         }
-        listOf(title, description, baseInput, emailInput, passwordInput, login, resume, unavailable, offDuty, statusText).forEach { view ->
+        listOf(title, description, emailInput, passwordInput, login, resume, unavailable, offDuty, statusText).forEach { view ->
             root.addView(view, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 })
         }
         setContentView(root)
     }
 
     private fun signIn() {
-        val base = baseInput.text.toString().trim()
+        val base = BuildConfig.DISPATCH_API_URL.trimEnd('/')
         val email = emailInput.text.toString().trim()
         val password = passwordInput.text.toString()
-        if (base.isBlank() || email.isBlank() || password.isBlank()) {
-            statusText.text = "API URL, email and password are required."
+        if (email.isBlank() || password.isBlank()) {
+            statusText.text = "Email and password are required."
             return
         }
         statusText.text = "Signing in…"
