@@ -29,7 +29,7 @@ test.before(async () => {
 
 test.after(() => child?.kill('SIGTERM'));
 
-test('booking can be created, offered and accepted end-to-end', async () => {
+test('booking can run through offer, trip start and completion end-to-end', async () => {
   const create = await fetch(`${base}/api/bookings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -50,9 +50,25 @@ test('booking can be created, offered and accepted end-to-end', async () => {
   assert.equal(assigned.status, 'assigned');
   assert.ok(assigned.assignedDriverId);
 
+  const start = await fetch(`${base}/api/bookings/${booking.id}/start`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ driverId: assigned.assignedDriverId })
+  });
+  assert.equal(start.status, 200);
+  assert.equal((await start.json()).status, 'in_progress');
+
+  const complete = await fetch(`${base}/api/bookings/${booking.id}/complete`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ driverId: assigned.assignedDriverId })
+  });
+  assert.equal(complete.status, 200);
+  assert.equal((await complete.json()).status, 'completed');
+
   const snapshot = await (await fetch(`${base}/api/state`)).json();
   const driver = snapshot.drivers.find((d) => d.id === assigned.assignedDriverId);
-  assert.equal(driver.status, 'busy');
+  assert.equal(driver.status, 'available');
 });
 
 test('driver active-offer endpoint returns only the offered job', async () => {
