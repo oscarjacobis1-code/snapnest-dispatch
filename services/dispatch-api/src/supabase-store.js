@@ -82,6 +82,26 @@ export function createSupabaseStore(config) {
     return mapBooking(row, first(offers));
   }
 
+  async function activeOfferForDriver(driverId) {
+    const t = await tenant();
+    const offers = await db.request('dispatch_offers', {
+      query: {
+        tenant_id: `eq.${t.id}`,
+        driver_id: `eq.${driverId}`,
+        response: 'is.null',
+        expires_at: `gt.${new Date().toISOString()}`,
+        select: 'booking_id,driver_id,expires_at,offered_at',
+        order: 'offered_at.desc',
+        limit: 1
+      }
+    });
+    const offer = first(offers);
+    if (!offer) return null;
+    const rows = await db.request('bookings', { query: { id: `eq.${offer.booking_id}`, tenant_id: `eq.${t.id}`, select: '*', limit: 1 } });
+    const booking = first(rows);
+    return booking ? mapBooking(booking, offer) : null;
+  }
+
   async function publicState() {
     const t = await tenant();
     const [drivers, bookingRows, offerRows, events] = await Promise.all([
@@ -118,12 +138,10 @@ export function createSupabaseStore(config) {
 
   async function updateDriverLocation(driverId, location) {
     const t = await tenant();
-    const driver = first(await db.request('drivers', { query: { id: `eq.${driverId}`, tenant_id: `eq.${t.id}`, select: 'id', limit: 1 } }));
-    if (!driver) throw new Error('Driver not found.');
     const payload = { driver_id: driverId, tenant_id: t.id, latitude: Number(location.lat), longitude: Number(location.lng), accuracy_m: Number(location.accuracyM ?? 0), captured_at: new Date().toISOString() };
     if (!Number.isFinite(payload.latitude) || !Number.isFinite(payload.longitude)) throw new Error('Valid latitude and longitude are required.');
     await db.request('driver_locations', { method: 'POST', query: { on_conflict: 'driver_id' }, body: payload, prefer: 'resolution=merge-duplicates,return=minimal' });
-    await db.request('drivers', { method: 'PATCH', query: { id: `eq.${driverId}` }, body: { last_seen_at: new Date().toISOString() }, prefer: 'return=minimal' });
+    await db.request('drivers', { method: 'PATCH', query: { id: `eq.${driverId}`, tenant_id: `eq.${t.id}` }, body: { last_seen_at: new Date().toISOString() }, prefer: 'return=minimal' });
     notify({ id: null, type: 'driver.location', at: new Date().toISOString(), payload: { driverId, ...payload } });
     return { lat: payload.latitude, lng: payload.longitude, accuracyM: payload.accuracy_m, capturedAt: payload.captured_at };
   }
@@ -206,7 +224,7 @@ export function createSupabaseStore(config) {
   }
 
   return {
-    mode: 'supabase', publicState, setNightMode, setDriverStatus, updateDriverLocation,
+    mode: 'supabase', publicState, activeOfferForDriver, setNightMode, setDriverStatus, updateDriverLocation,
     createBooking, respondToOffer, expireOffers, sessionContext, login, refresh,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
   };
