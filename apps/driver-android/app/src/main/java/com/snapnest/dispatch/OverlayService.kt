@@ -5,7 +5,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.*
 import android.widget.TextView
 import kotlin.math.abs
@@ -19,13 +21,31 @@ class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private lateinit var bubble: TextView
     private lateinit var params: WindowManager.LayoutParams
+    private lateinit var pttClient: PttClient
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var busyMode = false
+    private var pttState = PttClient.State.CONNECTING
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(41, notification("Driver available · PTT ready"))
+        startForeground(41, notification("Connecting driver radio…"))
         showBubble()
+        pttClient = PttClient(this, SessionStore(this)) { state ->
+            mainHandler.post {
+                pttState = state
+                if (::bubble.isInitialized) applyVisualState()
+                val text = when (state) {
+                    PttClient.State.READY -> if (busyMode) "On job · PTT ready" else "Driver available · PTT ready"
+                    PttClient.State.TALKING -> "Transmitting to dispatcher"
+                    PttClient.State.BUSY -> "Radio busy · another speaker has the floor"
+                    PttClient.State.CONNECTING -> "Connecting driver radio…"
+                    PttClient.State.OFFLINE -> "PTT offline · dispatch app still active"
+                }
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(41, notification(text))
+            }
+        }
+        pttClient.connect()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,7 +82,7 @@ class OverlayService : Service() {
             var initialY = 0
             var initialTouchX = 0f
             var initialTouchY = 0f
-            var talking = false
+            var talkRequested = false
 
             override fun onTouch(v: View, event: android.view.MotionEvent): Boolean {
                 when (event.action) {
@@ -71,15 +91,16 @@ class OverlayService : Service() {
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
-                        talking = true
-                        bubble.text = "TALKING…"
-                        bubble.background = bubbleBackground(Color.rgb(37, 88, 184))
-                        // Audio transport is connected in the next PTT integration phase.
+                        talkRequested = true
+                        bubble.text = "WAIT…"
+                        bubble.background = bubbleBackground(Color.rgb(37, 99, 235))
+                        pttClient.beginTalk()
                         return true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         if (abs(event.rawX - initialTouchX) > 18 || abs(event.rawY - initialTouchY) > 18) {
-                            talking = false
+                            if (talkRequested) pttClient.endTalk()
+                            talkRequested = false
                             params.x = initialX + (event.rawX - initialTouchX).toInt()
                             params.y = initialY + (event.rawY - initialTouchY).toInt()
                             applyVisualState()
@@ -88,8 +109,8 @@ class OverlayService : Service() {
                         return true
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        talking = false
-                        applyVisualState()
+                        if (talkRequested) pttClient.endTalk()
+                        talkRequested = false
                         return true
                     }
                 }
@@ -106,16 +127,35 @@ class OverlayService : Service() {
         params.height = if (busy) 124 else 170
         applyVisualState()
         windowManager.updateViewLayout(bubble, params)
-        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(41, notification(if (busy) "On job · PTT available" else "Driver available · PTT ready"))
     }
 
     private fun applyVisualState() {
-        bubble.text = if (busyMode) "PTT" else "HOLD\nTO TALK"
-        bubble.background = bubbleBackground(if (busyMode) Color.rgb(180, 110, 5) else Color.rgb(22, 128, 59))
+        when (pttState) {
+            PttClient.State.TALKING -> {
+                bubble.text = "TALKING…"
+                bubble.background = bubbleBackground(Color.rgb(37, 88, 184))
+            }
+            PttClient.State.BUSY -> {
+                bubble.text = "RADIO\nBUSY"
+                bubble.background = bubbleBackground(Color.rgb(107, 114, 128))
+            }
+            PttClient.State.OFFLINE -> {
+                bubble.text = "PTT\nOFFLINE"
+                bubble.background = bubbleBackground(Color.rgb(153, 27, 27))
+            }
+            PttClient.State.CONNECTING -> {
+                bubble.text = "PTT…"
+                bubble.background = bubbleBackground(Color.rgb(75, 85, 99))
+            }
+            PttClient.State.READY -> {
+                bubble.text = if (busyMode) "PTT" else "HOLD\nTO TALK"
+                bubble.background = bubbleBackground(if (busyMode) Color.rgb(180, 110, 5) else Color.rgb(22, 128, 59))
+            }
+        }
     }
 
     override fun onDestroy() {
+        if (::pttClient.isInitialized) pttClient.close()
         if (::bubble.isInitialized) windowManager.removeView(bubble)
         super.onDestroy()
     }
