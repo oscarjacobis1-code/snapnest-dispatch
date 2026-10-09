@@ -55,6 +55,24 @@ test('booking can be created, offered and accepted end-to-end', async () => {
   assert.equal(driver.status, 'busy');
 });
 
+test('driver active-offer endpoint returns only the offered job', async () => {
+  const create = await fetch(`${base}/api/bookings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ passengerName: 'Second Customer', passengers: 2, pickup: { label: 'Camp Street', lat: 6.818, lng: -58.15 }, destination: { label: 'Giftland' } })
+  });
+  assert.equal(create.status, 201);
+  const booking = await create.json();
+  assert.ok(booking.currentOfferDriverId);
+
+  const response = await fetch(`${base}/api/drivers/${booking.currentOfferDriverId}/active-offer`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.offer.id, booking.id);
+  assert.equal(payload.offer.currentOfferDriverId, booking.currentOfferDriverId);
+  assert.equal(payload.offer.pickup.label, 'Camp Street');
+});
+
 test('driver location update reaches state', async () => {
   const state = await (await fetch(`${base}/api/state`)).json();
   const driver = state.drivers[0];
