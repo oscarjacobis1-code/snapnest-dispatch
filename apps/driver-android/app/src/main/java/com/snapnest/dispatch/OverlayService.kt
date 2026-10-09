@@ -16,6 +16,8 @@ class OverlayService : Service() {
     companion object {
         const val ACTION_AVAILABLE = "com.snapnest.dispatch.overlay.AVAILABLE"
         const val ACTION_BUSY = "com.snapnest.dispatch.overlay.BUSY"
+        private val SNAPNEST_NAVY = Color.rgb(13, 42, 64)
+        private val SNAPNEST_ORANGE = Color.rgb(239, 106, 0)
     }
 
     private lateinit var windowManager: WindowManager
@@ -93,7 +95,7 @@ class OverlayService : Service() {
                         initialTouchY = event.rawY
                         talkRequested = true
                         bubble.text = "WAIT…"
-                        bubble.background = bubbleBackground(Color.rgb(37, 99, 235))
+                        bubble.background = bubbleBackground(SNAPNEST_NAVY, SNAPNEST_ORANGE)
                         pttClient.beginTalk()
                         return true
                     }
@@ -133,23 +135,26 @@ class OverlayService : Service() {
         when (pttState) {
             PttClient.State.TALKING -> {
                 bubble.text = "TALKING…"
-                bubble.background = bubbleBackground(Color.rgb(37, 88, 184))
+                bubble.background = bubbleBackground(SNAPNEST_ORANGE, Color.WHITE)
             }
             PttClient.State.BUSY -> {
                 bubble.text = "RADIO\nBUSY"
-                bubble.background = bubbleBackground(Color.rgb(107, 114, 128))
+                bubble.background = bubbleBackground(Color.rgb(71, 85, 105), Color.rgb(148, 163, 184))
             }
             PttClient.State.OFFLINE -> {
                 bubble.text = "PTT\nOFFLINE"
-                bubble.background = bubbleBackground(Color.rgb(153, 27, 27))
+                bubble.background = bubbleBackground(Color.rgb(153, 27, 27), Color.rgb(248, 113, 113))
             }
             PttClient.State.CONNECTING -> {
                 bubble.text = "PTT…"
-                bubble.background = bubbleBackground(Color.rgb(75, 85, 99))
+                bubble.background = bubbleBackground(SNAPNEST_NAVY, SNAPNEST_ORANGE)
             }
             PttClient.State.READY -> {
                 bubble.text = if (busyMode) "PTT" else "HOLD\nTO TALK"
-                bubble.background = bubbleBackground(if (busyMode) Color.rgb(180, 110, 5) else Color.rgb(22, 128, 59))
+                bubble.background = bubbleBackground(
+                    if (busyMode) Color.rgb(180, 110, 5) else Color.rgb(22, 128, 59),
+                    if (busyMode) SNAPNEST_ORANGE else Color.WHITE
+                )
             }
         }
     }
@@ -160,9 +165,10 @@ class OverlayService : Service() {
         super.onDestroy()
     }
 
-    private fun bubbleBackground(color: Int) = GradientDrawable().apply {
+    private fun bubbleBackground(color: Int, stroke: Int) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(color)
+        setStroke(4, stroke)
     }
 
     private fun notification(text: String): Notification {
