@@ -11,9 +11,15 @@ import android.widget.TextView
 import kotlin.math.abs
 
 class OverlayService : Service() {
+    companion object {
+        const val ACTION_AVAILABLE = "com.snapnest.dispatch.overlay.AVAILABLE"
+        const val ACTION_BUSY = "com.snapnest.dispatch.overlay.BUSY"
+    }
+
     private lateinit var windowManager: WindowManager
     private lateinit var bubble: TextView
     private lateinit var params: WindowManager.LayoutParams
+    private var busyMode = false
 
     override fun onCreate() {
         super.onCreate()
@@ -22,14 +28,20 @@ class OverlayService : Service() {
         showBubble()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_BUSY -> setBusyMode(true)
+            ACTION_AVAILABLE -> setBusyMode(false)
+        }
+        return START_STICKY
+    }
+
     private fun showBubble() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         bubble = TextView(this).apply {
-            text = "HOLD\nTO TALK"
             gravity = Gravity.CENTER
             textSize = 11f
             setTextColor(Color.WHITE)
-            background = bubbleBackground(Color.rgb(22, 128, 59))
             elevation = 12f
             setPadding(14, 14, 14, 14)
         }
@@ -43,6 +55,7 @@ class OverlayService : Service() {
             x = 24
             y = 360
         }
+        applyVisualState()
 
         bubble.setOnTouchListener(object : View.OnTouchListener {
             var initialX = 0
@@ -54,32 +67,29 @@ class OverlayService : Service() {
             override fun onTouch(v: View, event: android.view.MotionEvent): Boolean {
                 when (event.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x; initialY = params.y
-                        initialTouchX = event.rawX; initialTouchY = event.rawY
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
                         talking = true
                         bubble.text = "TALKING…"
                         bubble.background = bubbleBackground(Color.rgb(37, 88, 184))
-                        // TODO: start explicit WebRTC/audio transmit session.
+                        // Audio transport is connected in the next PTT integration phase.
                         return true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         if (abs(event.rawX - initialTouchX) > 18 || abs(event.rawY - initialTouchY) > 18) {
                             talking = false
-                            bubble.text = "HOLD\nTO TALK"
-                            bubble.background = bubbleBackground(Color.rgb(22, 128, 59))
                             params.x = initialX + (event.rawX - initialTouchX).toInt()
                             params.y = initialY + (event.rawY - initialTouchY).toInt()
+                            applyVisualState()
                             windowManager.updateViewLayout(bubble, params)
                         }
                         return true
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        if (talking) {
-                            // TODO: stop transmit immediately on release.
-                            talking = false
-                        }
-                        bubble.text = "HOLD\nTO TALK"
-                        bubble.background = bubbleBackground(Color.rgb(22, 128, 59))
+                        talking = false
+                        applyVisualState()
                         return true
                     }
                 }
@@ -87,6 +97,22 @@ class OverlayService : Service() {
             }
         })
         windowManager.addView(bubble, params)
+    }
+
+    private fun setBusyMode(busy: Boolean) {
+        busyMode = busy
+        if (!::bubble.isInitialized) return
+        params.width = if (busy) 124 else 170
+        params.height = if (busy) 124 else 170
+        applyVisualState()
+        windowManager.updateViewLayout(bubble, params)
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(41, notification(if (busy) "On job · PTT available" else "Driver available · PTT ready"))
+    }
+
+    private fun applyVisualState() {
+        bubble.text = if (busyMode) "PTT" else "HOLD\nTO TALK"
+        bubble.background = bubbleBackground(if (busyMode) Color.rgb(180, 110, 5) else Color.rgb(22, 128, 59))
     }
 
     override fun onDestroy() {
