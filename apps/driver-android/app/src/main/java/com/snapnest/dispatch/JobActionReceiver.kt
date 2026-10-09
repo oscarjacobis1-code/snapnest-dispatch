@@ -23,6 +23,9 @@ class JobActionReceiver : BroadcastReceiver() {
                 val manager = context.getSystemService(NotificationManager::class.java)
                 manager.cancel(DriverLocationService.OFFER_ID)
                 if (accept) {
+                    context.startForegroundService(
+                        Intent(context, OverlayService::class.java).setAction(OverlayService.ACTION_BUSY)
+                    )
                     val open = PendingIntent.getActivity(
                         context,
                         2700,
