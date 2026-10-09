@@ -78,11 +78,8 @@ class PttClient(
         if (!connection.enabled || connection.serverUrl.isBlank() || connection.participantToken.isBlank()) {
             throw IllegalStateException("PTT is not configured yet.")
         }
-        val connected = LiveKit.connect(
-            appContext = appContext,
-            url = connection.serverUrl,
-            token = connection.participantToken
-        )
+        val connected = LiveKit.create(appContext)
+        connected.connect(connection.serverUrl, connection.participantToken)
         connected.localParticipant.setMicrophoneEnabled(false)
         room = connected
         onState(State.READY)
