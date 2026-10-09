@@ -3,13 +3,15 @@ services:
     name: snapnest-dispatch
     runtime: node
     plan: free
-    region: ohio
+    region: virginia
     branch: main
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
-    autoDeploy: true
+    autoDeployTrigger: checksPass
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: NODE_VERSION
         value: "22"
       - key: SUPABASE_URL
