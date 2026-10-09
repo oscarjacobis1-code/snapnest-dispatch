@@ -19,6 +19,7 @@ class MainActivity : Activity() {
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var sessionStore: SessionStore
+    private var pendingDutyStatus: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +57,7 @@ class MainActivity : Activity() {
             text = "End shift"
             isEnabled = saved != null
             setOnClickListener {
+                pendingDutyStatus = null
                 setStatus("offline")
                 stopDutyServices()
             }
@@ -128,21 +130,31 @@ class MainActivity : Activity() {
 
     private fun enableDuty(status: String) {
         if (sessionStore.load() == null) {
+            pendingDutyStatus = null
             statusText.text = "Sign in before starting duty."
             return
         }
+
+        pendingDutyStatus = status
+
         if (!Settings.canDrawOverlays(this)) {
+            statusText.text = "Allow Display over other apps for SnapNest Dispatch, then return here."
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
         }
+
         val permissions = mutableListOf<String>()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) permissions += Manifest.permission.RECORD_AUDIO
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) permissions += Manifest.permission.ACCESS_FINE_LOCATION
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permissions += Manifest.permission.POST_NOTIFICATIONS
         if (permissions.isNotEmpty()) {
+            statusText.text = "Allow location, microphone and notifications so duty can start."
             requestPermissions(permissions.toTypedArray(), 2401)
             return
         }
+
+        pendingDutyStatus = null
+        statusText.text = "Starting duty services…"
         startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
         startForegroundService(Intent(this, DriverLocationService::class.java))
         setStatus(status)
@@ -151,6 +163,13 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (!::sessionStore.isInitialized) return
+
+        val pending = pendingDutyStatus
+        if (pending != null && Settings.canDrawOverlays(this)) {
+            enableDuty(pending)
+            return
+        }
+
         if (
             Settings.canDrawOverlays(this) &&
             sessionStore.load() != null &&
@@ -165,8 +184,9 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 2401 && grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            enableDuty("available")
+            enableDuty(pendingDutyStatus ?: "available")
         } else if (requestCode == 2401) {
+            pendingDutyStatus = null
             statusText.text = "Location, microphone and notification permissions are required while on duty."
         }
     }
