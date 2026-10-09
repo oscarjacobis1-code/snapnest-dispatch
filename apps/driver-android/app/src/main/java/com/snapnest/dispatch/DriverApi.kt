@@ -137,4 +137,16 @@ object DriverApi {
             readJson(conn)
         }
     }
+
+    fun updateTrip(store: SessionStore, bookingId: String, action: String) {
+        require(action == "start" || action == "complete") { "Invalid trip action" }
+        withRefresh(store) { session ->
+            val conn = connection("${session.baseUrl}/api/bookings/$bookingId/$action", "POST", session.accessToken)
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { writer ->
+                writer.write(JSONObject().put("driverId", session.driverId).toString())
+            }
+            readJson(conn)
+        }
+    }
 }
