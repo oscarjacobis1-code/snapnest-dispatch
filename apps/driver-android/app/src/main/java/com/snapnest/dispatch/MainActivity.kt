@@ -2,6 +2,7 @@ package com.snapnest.dispatch
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -37,7 +38,7 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, 20)
         }
         val description = TextView(this).apply {
-            text = "Sign in once. While you are on duty the app shares your GPS position and keeps the floating push-to-talk control available above other apps."
+            text = "Sign in once. While you are on duty the app shares your GPS position, listens for trip offers and keeps the floating push-to-talk control available above other apps."
             textSize = 16f
             setPadding(0, 0, 0, 20)
         }
@@ -62,8 +63,7 @@ class MainActivity : Activity() {
             isEnabled = saved != null
             setOnClickListener {
                 setStatus("offline")
-                stopService(Intent(this@MainActivity, DriverLocationService::class.java))
-                stopService(Intent(this@MainActivity, OverlayService::class.java))
+                stopDutyServices()
             }
         }
         statusText = TextView(this).apply {
@@ -106,17 +106,30 @@ class MainActivity : Activity() {
         }
         Thread {
             runCatching { DriverApi.postStatus(sessionStore, status) }
-                .onSuccess { runOnUiThread { statusText.text = "Status: $status" } }
-                .onFailure {
+                .onSuccess {
                     runOnUiThread {
-                        statusText.text = it.message ?: "Status update failed"
-                        if (sessionStore.load() == null) {
-                            stopService(Intent(this@MainActivity, DriverLocationService::class.java))
-                            stopService(Intent(this@MainActivity, OverlayService::class.java))
+                        statusText.text = "Status: $status"
+                        when (status) {
+                            "available" -> startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
+                            "unavailable" -> stopService(Intent(this, OverlayService::class.java))
+                            "offline" -> stopDutyServices()
                         }
                     }
                 }
+                .onFailure {
+                    runOnUiThread {
+                        statusText.text = it.message ?: "Status update failed"
+                        if (sessionStore.load() == null) stopDutyServices()
+                    }
+                }
         }.start()
+    }
+
+    private fun stopDutyServices() {
+        stopService(Intent(this, DriverLocationService::class.java))
+        stopService(Intent(this, OverlayService::class.java))
+        getSystemService(NotificationManager::class.java).cancel(DriverLocationService.OFFER_ID)
+        getSystemService(NotificationManager::class.java).cancel(DriverLocationService.ACCEPTED_JOB_ID)
     }
 
     private fun enableDuty(status: String) {
@@ -136,7 +149,7 @@ class MainActivity : Activity() {
             requestPermissions(permissions.toTypedArray(), 2401)
             return
         }
-        startForegroundService(Intent(this, OverlayService::class.java))
+        startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
         startForegroundService(Intent(this, DriverLocationService::class.java))
         setStatus(status)
     }
