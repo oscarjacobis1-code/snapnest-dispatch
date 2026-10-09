@@ -5,11 +5,14 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseStructuredTaxiRequest } from './dispatch-engine.js';
 import { createRuntimeStore } from './runtime-store.js';
+import { createPttFloor } from './ptt/floor.js';
+import { createPttToken, liveKitPttConfig } from './ptt/livekit-provider.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = normalize(join(here, '../../../apps/control-center/public'));
 const port = Number(process.env.PORT || 8787);
 const { store, config } = createRuntimeStore();
+const pttFloor = createPttFloor();
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -72,7 +75,7 @@ function cacheAuth(key, context) {
 }
 
 async function authContext(req) {
-  if (!config.requireAuth) return { user: { id: 'demo', email: 'demo@snapnest.local' }, membership: { role: 'admin' }, driver: null };
+  if (!config.requireAuth) return { user: { id: 'demo', email: 'demo@snapnest.local' }, membership: { tenant_id: 'demo-base', role: 'admin' }, driver: null };
   const token = bearer(req);
   if (!token) throw new HttpError(401, 'Sign in required.');
   const cacheKey = tokenCacheKey(token);
@@ -137,7 +140,9 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
-    if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, version: '0.2.0', mode: store.mode });
+    if (req.method === 'GET' && path === '/api/health') {
+      return json(res, 200, { ok: true, version: '0.3.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
+    }
 
     if (req.method === 'POST' && path === '/api/auth/login') {
       const input = await body(req);
@@ -152,6 +157,30 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/auth/me') return json(res, 200, await authContext(req));
+
+    if (req.method === 'GET' && path === '/api/ptt/token') {
+      const context = await authContext(req);
+      return json(res, 200, await createPttToken(context));
+    }
+
+    if (req.method === 'POST' && path === '/api/ptt/floor/acquire') {
+      const context = await authContext(req);
+      return json(res, 200, pttFloor.acquire(context));
+    }
+
+    if (req.method === 'POST' && path === '/api/ptt/floor/heartbeat') {
+      const context = await authContext(req);
+      const input = await body(req);
+      if (!input.leaseToken) throw new HttpError(400, 'PTT lease token is required.');
+      return json(res, 200, pttFloor.heartbeat(context, String(input.leaseToken)));
+    }
+
+    if (req.method === 'POST' && path === '/api/ptt/floor/release') {
+      const context = await authContext(req);
+      const input = await body(req);
+      if (!input.leaseToken) throw new HttpError(400, 'PTT lease token is required.');
+      return json(res, 200, pttFloor.release(context, String(input.leaseToken)));
+    }
 
     if (req.method === 'GET' && path === '/api/state') {
       const context = await authContext(req);
@@ -239,4 +268,4 @@ const server = http.createServer(async (req, res) => {
 });
 
 setInterval(() => store.expireOffers().catch?.((error) => console.error('expireOffers:', error.message)), 1000).unref();
-server.listen(port, () => console.log(`SnapNest Dispatch v0.2 running on http://localhost:${port} (${store.mode})`));
+server.listen(port, () => console.log(`SnapNest Dispatch v0.3 running on http://localhost:${port} (${store.mode})`));
