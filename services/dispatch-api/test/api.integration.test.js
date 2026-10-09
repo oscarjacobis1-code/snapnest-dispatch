@@ -21,7 +21,7 @@ async function waitForServer() {
 test.before(async () => {
   child = spawn(process.execPath, ['services/dispatch-api/src/server.js'], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SECRET_KEY: '', SUPABASE_PUBLISHABLE_KEY: '' },
+    env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SECRET_KEY: '', SUPABASE_PUBLISHABLE_KEY: '', LIVEKIT_URL: '', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
     stdio: 'ignore'
   });
   await waitForServer();
@@ -31,8 +31,7 @@ test.after(() => child?.kill('SIGTERM'));
 
 test('booking can run through offer, trip start and completion end-to-end', async () => {
   const create = await fetch(`${base}/api/bookings`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ passengerName: 'Pilot Customer', passengers: 1, pickup: { label: 'Albertown', lat: 6.8208, lng: -58.1551 }, destination: { label: 'Diamond' } })
   });
   assert.equal(create.status, 201);
@@ -41,8 +40,7 @@ test('booking can run through offer, trip start and completion end-to-end', asyn
   assert.ok(booking.currentOfferDriverId);
 
   const accept = await fetch(`${base}/api/bookings/${booking.id}/offer-response`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ driverId: booking.currentOfferDriverId, accept: true })
   });
   assert.equal(accept.status, 200);
@@ -51,36 +49,29 @@ test('booking can run through offer, trip start and completion end-to-end', asyn
   assert.ok(assigned.assignedDriverId);
 
   const start = await fetch(`${base}/api/bookings/${booking.id}/start`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ driverId: assigned.assignedDriverId })
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ driverId: assigned.assignedDriverId })
   });
   assert.equal(start.status, 200);
   assert.equal((await start.json()).status, 'in_progress');
 
   const complete = await fetch(`${base}/api/bookings/${booking.id}/complete`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ driverId: assigned.assignedDriverId })
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ driverId: assigned.assignedDriverId })
   });
   assert.equal(complete.status, 200);
   assert.equal((await complete.json()).status, 'completed');
 
   const snapshot = await (await fetch(`${base}/api/state`)).json();
-  const driver = snapshot.drivers.find((d) => d.id === assigned.assignedDriverId);
-  assert.equal(driver.status, 'available');
+  assert.equal(snapshot.drivers.find((d) => d.id === assigned.assignedDriverId).status, 'available');
 });
 
 test('driver active-offer endpoint returns only the offered job', async () => {
   const create = await fetch(`${base}/api/bookings`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ passengerName: 'Second Customer', passengers: 2, pickup: { label: 'Camp Street', lat: 6.818, lng: -58.15 }, destination: { label: 'Giftland' } })
   });
   assert.equal(create.status, 201);
   const booking = await create.json();
   assert.ok(booking.currentOfferDriverId);
-
   const response = await fetch(`${base}/api/drivers/${booking.currentOfferDriverId}/active-offer`);
   assert.equal(response.status, 200);
   const payload = await response.json();
@@ -93,11 +84,30 @@ test('driver location update reaches state', async () => {
   const state = await (await fetch(`${base}/api/state`)).json();
   const driver = state.drivers[0];
   const update = await fetch(`${base}/api/drivers/${driver.id}/location`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ lat: 6.81234, lng: -58.12345, accuracyM: 12 })
   });
   assert.equal(update.status, 200);
   const next = await (await fetch(`${base}/api/state`)).json();
   assert.equal(next.drivers.find((d) => d.id === driver.id).location.lat, 6.81234);
+});
+
+test('PTT endpoints degrade safely when LiveKit is not configured', async () => {
+  const token = await fetch(`${base}/api/ptt/token`);
+  assert.equal(token.status, 200);
+  const tokenBody = await token.json();
+  assert.equal(tokenBody.enabled, false);
+  assert.equal(tokenBody.provider, 'livekit');
+
+  const acquire = await fetch(`${base}/api/ptt/floor/acquire`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(acquire.status, 200);
+  const lease = await acquire.json();
+  assert.equal(lease.granted, true);
+  assert.ok(lease.leaseToken);
+
+  const release = await fetch(`${base}/api/ptt/floor/release`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ leaseToken: lease.leaseToken })
+  });
+  assert.equal(release.status, 200);
+  assert.equal((await release.json()).released, true);
 });
