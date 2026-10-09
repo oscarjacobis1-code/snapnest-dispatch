@@ -158,6 +158,13 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, filterState(await store.publicState(), context));
     }
 
+    const activeOfferMatch = path.match(/^\/api\/drivers\/([^/]+)\/active-offer$/);
+    if (req.method === 'GET' && activeOfferMatch) {
+      const context = await authContext(req);
+      requireDriverAccess(context, activeOfferMatch[1]);
+      return json(res, 200, { offer: await store.activeOfferForDriver(activeOfferMatch[1]) });
+    }
+
     if (req.method === 'GET' && path === '/api/events') {
       const context = await authContext(req);
       if (store.mode !== 'memory') throw new HttpError(410, 'Realtime SSE is disabled in persistent mode; clients should poll /api/state.');
