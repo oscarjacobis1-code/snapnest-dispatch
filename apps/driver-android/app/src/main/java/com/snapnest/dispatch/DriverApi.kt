@@ -1,5 +1,6 @@
 package com.snapnest.dispatch
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -12,7 +13,33 @@ object DriverApi {
         val passengerName: String,
         val passengers: Int,
         val notes: String,
-        val expiresAt: Long?
+        val expiresAt: Long?,
+        val pickupLat: Double? = null,
+        val pickupLng: Double? = null,
+        val destinationLat: Double? = null,
+        val destinationLng: Double? = null
+    )
+
+    data class ActiveTrip(
+        val bookingId: String,
+        val pickup: String,
+        val destination: String,
+        val passengerName: String,
+        val passengers: Int,
+        val notes: String,
+        val status: String,
+        val pickupLat: Double? = null,
+        val pickupLng: Double? = null,
+        val destinationLat: Double? = null,
+        val destinationLng: Double? = null
+    )
+
+    data class DriverSnapshot(
+        val driverName: String,
+        val vehicle: String,
+        val driverStatus: String,
+        val offer: ActiveOffer?,
+        val trip: ActiveTrip?
     )
 
     data class PttConnection(
@@ -51,12 +78,24 @@ object DriverApi {
         return json
     }
 
+    private fun nullableDouble(json: JSONObject?, key: String): Double? {
+        if (json == null || !json.has(key) || json.isNull(key)) return null
+        return json.optDouble(key).takeIf { !it.isNaN() }
+    }
+
     private fun sessionFromJson(baseUrl: String, json: JSONObject): SessionStore.Session {
         val driver = json.optJSONObject("driver") ?: throw IllegalStateException("This account is not linked to a driver.")
         val access = json.optString("accessToken")
         val refresh = json.optString("refreshToken")
         if (access.isBlank() || refresh.isBlank()) throw IllegalStateException("The server did not return a complete driver session.")
-        return SessionStore.Session(baseUrl.trimEnd('/'), access, refresh, driver.getString("id"))
+        return SessionStore.Session(
+            baseUrl = baseUrl.trimEnd('/'),
+            accessToken = access,
+            refreshToken = refresh,
+            driverId = driver.getString("id"),
+            driverName = driver.optString("display_name", driver.optString("name", "Driver")),
+            vehicle = driver.optString("vehicle_plate", driver.optString("vehicle", ""))
+        )
     }
 
     fun login(baseUrl: String, email: String, password: String): SessionStore.Session {
@@ -75,7 +114,11 @@ object DriverApi {
         conn.outputStream.bufferedWriter().use { writer ->
             writer.write(JSONObject().put("refreshToken", session.refreshToken).toString())
         }
-        return sessionFromJson(session.baseUrl, readJson(conn))
+        val refreshed = sessionFromJson(session.baseUrl, readJson(conn))
+        return refreshed.copy(
+            driverName = refreshed.driverName.ifBlank { session.driverName },
+            vehicle = refreshed.vehicle.ifBlank { session.vehicle }
+        )
     }
 
     @Synchronized
@@ -127,17 +170,67 @@ object DriverApi {
     fun activeOffer(store: SessionStore): ActiveOffer? = withRefresh(store) { session ->
         val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/active-offer", "GET", session.accessToken)
         val offer = readJson(conn).optJSONObject("offer") ?: return@withRefresh null
-        val pickup = offer.optJSONObject("pickup")?.optString("label").orEmpty()
-        val destination = offer.optJSONObject("destination")?.optString("label").orEmpty()
+        parseOffer(offer)
+    }
+
+    private fun parseOffer(offer: JSONObject): ActiveOffer {
+        val pickup = offer.optJSONObject("pickup")
+        val destination = offer.optJSONObject("destination")
         val expires = if (offer.has("offerExpiresAt") && !offer.isNull("offerExpiresAt")) offer.optLong("offerExpiresAt") else null
-        ActiveOffer(
+        return ActiveOffer(
             bookingId = offer.getString("id"),
-            pickup = pickup,
-            destination = destination,
+            pickup = pickup?.optString("label").orEmpty(),
+            destination = destination?.optString("label").orEmpty(),
             passengerName = offer.optString("passengerName", "Guest"),
             passengers = offer.optInt("passengers", 1),
             notes = offer.optString("notes", ""),
-            expiresAt = expires
+            expiresAt = expires,
+            pickupLat = nullableDouble(pickup, "lat"),
+            pickupLng = nullableDouble(pickup, "lng"),
+            destinationLat = nullableDouble(destination, "lat"),
+            destinationLng = nullableDouble(destination, "lng")
+        )
+    }
+
+    private fun parseTrip(booking: JSONObject): ActiveTrip {
+        val pickup = booking.optJSONObject("pickup")
+        val destination = booking.optJSONObject("destination")
+        return ActiveTrip(
+            bookingId = booking.getString("id"),
+            pickup = pickup?.optString("label").orEmpty(),
+            destination = destination?.optString("label").orEmpty(),
+            passengerName = booking.optString("passengerName", "Guest"),
+            passengers = booking.optInt("passengers", 1),
+            notes = booking.optString("notes", ""),
+            status = booking.optString("status", "assigned"),
+            pickupLat = nullableDouble(pickup, "lat"),
+            pickupLng = nullableDouble(pickup, "lng"),
+            destinationLat = nullableDouble(destination, "lat"),
+            destinationLng = nullableDouble(destination, "lng")
+        )
+    }
+
+    fun driverSnapshot(store: SessionStore): DriverSnapshot = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/state", "GET", session.accessToken)
+        val json = readJson(conn)
+        val drivers = json.optJSONArray("drivers") ?: JSONArray()
+        val driver = if (drivers.length() > 0) drivers.optJSONObject(0) else null
+        val bookings = json.optJSONArray("bookings") ?: JSONArray()
+        var offer: ActiveOffer? = null
+        var trip: ActiveTrip? = null
+        for (i in 0 until bookings.length()) {
+            val booking = bookings.optJSONObject(i) ?: continue
+            when (booking.optString("status")) {
+                "offering" -> if (offer == null) offer = parseOffer(booking)
+                "assigned", "in_progress" -> if (trip == null) trip = parseTrip(booking)
+            }
+        }
+        DriverSnapshot(
+            driverName = driver?.optString("name").orEmpty().ifBlank { session.driverName.ifBlank { "Driver" } },
+            vehicle = driver?.optString("vehicle").orEmpty().ifBlank { session.vehicle },
+            driverStatus = driver?.optString("status").orEmpty().ifBlank { if (trip != null) "busy" else "available" },
+            offer = offer,
+            trip = trip
         )
     }
 
