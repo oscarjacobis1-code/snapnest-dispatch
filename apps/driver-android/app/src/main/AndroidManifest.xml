@@ -9,9 +9,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
-    <application android:theme="@style/AppTheme" android:label="SnapNest Dispatch Driver">
+    <application
+        android:theme="@style/AppTheme"
+        android:label="SnapNest Dispatch Driver"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
         <service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".DriverLocationService" android:exported="false" android:foregroundServiceType="location" />
