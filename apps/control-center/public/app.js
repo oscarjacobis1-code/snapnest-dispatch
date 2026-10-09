@@ -1,7 +1,9 @@
-import { api, clearSession } from '/session.js';
+import { api, clearSession, membership } from '/session.js';
 const $ = (s) => document.querySelector(s);
 const escapeHtml = (s='') => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let lastState = null;
+const member = membership();
+if (member?.role === 'admin') $('#adminLink').style.display = 'inline-flex';
 
 function percentLocation(driver) {
   const latMin = 6.798, latMax = 6.836, lngMin = -58.177, lngMax = -58.135;
