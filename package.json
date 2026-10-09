@@ -1,12 +1,15 @@
 {
   "name": "snapnest-dispatch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node services/dispatch-api/src/server.js",
     "start": "node services/dispatch-api/src/server.js",
     "test": "node --test services/dispatch-api/test/*.test.js"
+  },
+  "dependencies": {
+    "livekit-server-sdk": "2.19.1"
   },
   "engines": {
     "node": ">=22"
