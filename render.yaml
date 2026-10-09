@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: snapnest-dispatch
+    runtime: node
+    plan: free
+    region: ohio
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUPABASE_URL
+        value: https://bihtmrtbsombubfsdbjd.supabase.co
+      - key: SUPABASE_TENANT_SLUG
+        value: demo-base
+      - key: DISPATCH_REQUIRE_AUTH
+        value: "true"
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_lD1QorqGwPWdZ2Xhj4APkg_mn4Dm-IC
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: WHATSAPP_ADAPTER_KEY
+        generateValue: true
