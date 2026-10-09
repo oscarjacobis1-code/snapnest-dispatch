@@ -5,6 +5,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object DriverApi {
+    data class ActiveOffer(
+        val bookingId: String,
+        val pickup: String,
+        val destination: String,
+        val passengerName: String,
+        val passengers: Int,
+        val notes: String,
+        val expiresAt: Long?
+    )
+
     private class ApiException(val status: Int, message: String) : IllegalStateException(message)
 
     private fun connection(url: String, method: String, token: String? = null): HttpURLConnection {
@@ -54,6 +64,7 @@ object DriverApi {
         return sessionFromJson(session.baseUrl, readJson(conn))
     }
 
+    @Synchronized
     private fun <T> withRefresh(store: SessionStore, request: (SessionStore.Session) -> T): T {
         val initial = store.load() ?: throw IllegalStateException("Driver session expired. Sign in again.")
         try {
@@ -94,6 +105,34 @@ object DriverApi {
             conn.doOutput = true
             conn.outputStream.bufferedWriter().use { writer ->
                 writer.write(JSONObject().put("status", status).toString())
+            }
+            readJson(conn)
+        }
+    }
+
+    fun activeOffer(store: SessionStore): ActiveOffer? = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/active-offer", "GET", session.accessToken)
+        val offer = readJson(conn).optJSONObject("offer") ?: return@withRefresh null
+        val pickup = offer.optJSONObject("pickup")?.optString("label").orEmpty()
+        val destination = offer.optJSONObject("destination")?.optString("label").orEmpty()
+        val expires = if (offer.has("offerExpiresAt") && !offer.isNull("offerExpiresAt")) offer.optLong("offerExpiresAt") else null
+        ActiveOffer(
+            bookingId = offer.getString("id"),
+            pickup = pickup,
+            destination = destination,
+            passengerName = offer.optString("passengerName", "Guest"),
+            passengers = offer.optInt("passengers", 1),
+            notes = offer.optString("notes", ""),
+            expiresAt = expires
+        )
+    }
+
+    fun respondToOffer(store: SessionStore, bookingId: String, accept: Boolean) {
+        withRefresh(store) { session ->
+            val conn = connection("${session.baseUrl}/api/bookings/$bookingId/offer-response", "POST", session.accessToken)
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { writer ->
+                writer.write(JSONObject().put("driverId", session.driverId).put("accept", accept).toString())
             }
             readJson(conn)
         }
