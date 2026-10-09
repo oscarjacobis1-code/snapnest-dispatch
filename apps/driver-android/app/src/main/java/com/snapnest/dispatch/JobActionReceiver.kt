@@ -21,7 +21,7 @@ class JobActionReceiver : BroadcastReceiver() {
                 val store = SessionStore(context)
                 DriverApi.respondToOffer(store, bookingId, accept)
                 val manager = context.getSystemService(NotificationManager::class.java)
-                manager.cancel(DriverJobService.OFFER_ID)
+                manager.cancel(DriverLocationService.OFFER_ID)
                 if (accept) {
                     val open = PendingIntent.getActivity(
                         context,
@@ -30,8 +30,8 @@ class JobActionReceiver : BroadcastReceiver() {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                     manager.notify(
-                        2701,
-                        Notification.Builder(context, DriverJobService.CHANNEL_DUTY)
+                        DriverLocationService.ACCEPTED_JOB_ID,
+                        Notification.Builder(context, DriverLocationService.CHANNEL_LOCATION)
                             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                             .setContentTitle("Job accepted")
                             .setContentText("$pickup → $destination")
@@ -45,7 +45,7 @@ class JobActionReceiver : BroadcastReceiver() {
                 val manager = context.getSystemService(NotificationManager::class.java)
                 manager.notify(
                     2702,
-                    Notification.Builder(context, DriverJobService.CHANNEL_OFFERS)
+                    Notification.Builder(context, DriverLocationService.CHANNEL_OFFERS)
                         .setSmallIcon(android.R.drawable.stat_notify_error)
                         .setContentTitle("Could not update job")
                         .setContentText(error.message ?: "Open SnapNest Dispatch and try again.")
