@@ -2,7 +2,7 @@ name: android-driver
 
 on:
   push:
-    branches: [main]
+    branches: [main, production-deploy]
     paths:
       - 'apps/driver-android/**'
       - '.github/workflows/android.yml'
