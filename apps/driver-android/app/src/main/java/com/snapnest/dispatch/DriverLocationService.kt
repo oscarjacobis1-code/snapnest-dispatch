@@ -47,7 +47,7 @@ class DriverLocationService : Service(), LocationListener {
         }
         listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             .filter { locationManager.isProviderEnabled(it) }
-            .forEach { locationManager.requestLocationUpdates(it, 5000L, 5f, this) }
+            .forEach { locationManager.requestLocationUpdates(it, 10_000L, 10f, this) }
     }
 
     override fun onLocationChanged(location: Location) {
