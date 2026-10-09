@@ -68,6 +68,8 @@ export function createSupabaseStore(config) {
       status: row.status,
       createdAt: row.created_at,
       assignedAt: row.assigned_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
       assignedDriverId: row.assigned_driver_id,
       currentOfferDriverId: activeOffer?.driver_id ?? null,
       offerExpiresAt: activeOffer?.expires_at ? new Date(activeOffer.expires_at).getTime() : null
@@ -191,6 +193,20 @@ export function createSupabaseStore(config) {
     return bookingById(bookingId);
   }
 
+  async function startTrip({ bookingId, driverId }) {
+    const t = await tenant();
+    await db.rpc('start_driver_trip', { p_tenant_id: t.id, p_booking_id: bookingId, p_driver_id: driverId });
+    await emit('booking.started', { bookingId, driverId });
+    return bookingById(bookingId);
+  }
+
+  async function completeTrip({ bookingId, driverId }) {
+    const t = await tenant();
+    await db.rpc('complete_driver_trip', { p_tenant_id: t.id, p_booking_id: bookingId, p_driver_id: driverId });
+    await emit('booking.completed', { bookingId, driverId });
+    return bookingById(bookingId);
+  }
+
   async function expireOffers(now = Date.now()) {
     const t = await tenant();
     const expired = await db.request('dispatch_offers', { query: { tenant_id: `eq.${t.id}`, response: 'is.null', expires_at: `lt.${new Date(now).toISOString()}`, select: 'id,booking_id,driver_id' } });
@@ -225,7 +241,7 @@ export function createSupabaseStore(config) {
 
   return {
     mode: 'supabase', publicState, activeOfferForDriver, setNightMode, setDriverStatus, updateDriverLocation,
-    createBooking, respondToOffer, expireOffers, sessionContext, login, refresh,
+    createBooking, respondToOffer, startTrip, completeTrip, expireOffers, sessionContext, login, refresh,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
   };
 }
