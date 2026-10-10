@@ -8,12 +8,14 @@ import { createRuntimeStore } from './runtime-store.js';
 import { createPttFloor } from './ptt/floor.js';
 import { createPttToken, liveKitPttConfig } from './ptt/livekit-provider.js';
 import { handleOperationsRequest } from './modules/operations-http.js';
+import { createAuthModule } from './modules/auth.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = normalize(join(here, '../../../apps/control-center/public'));
 const port = Number(process.env.PORT || 8787);
 const { store, config } = createRuntimeStore();
 const pttFloor = createPttFloor();
+const authModule = config.persistent ? createAuthModule({ config, store }) : null;
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -142,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/health') {
-      return json(res, 200, { ok: true, version: '0.4.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
+      return json(res, 200, { ok: true, version: '0.5.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
     }
 
     if (req.method === 'POST' && path === '/api/auth/login') {
@@ -155,6 +157,33 @@ const server = http.createServer(async (req, res) => {
       const input = await body(req);
       if (!input.refreshToken) throw new HttpError(400, 'Refresh token is required.');
       return json(res, 200, await store.refresh(input.refreshToken));
+    }
+
+    if (req.method === 'GET' && path === '/api/auth/oauth-url') {
+      if (!authModule) throw new HttpError(503, 'SSO is unavailable in this environment.');
+      const provider = url.searchParams.get('provider');
+      const redirectTo = url.searchParams.get('redirectTo');
+      return json(res, 200, { url: authModule.oauthUrl(provider, redirectTo) });
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/session') {
+      if (!authModule) throw new HttpError(503, 'SSO is unavailable in this environment.');
+      const input = await body(req);
+      return json(res, 200, await authModule.sessionFromTokens(input.accessToken, input.refreshToken, input.expiresIn));
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/password-reset') {
+      if (!authModule) throw new HttpError(503, 'Password recovery is unavailable in this environment.');
+      const input = await body(req);
+      await authModule.requestPasswordReset(input.email, input.redirectTo);
+      return json(res, 200, { ok: true });
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/password-update') {
+      if (!authModule) throw new HttpError(503, 'Password recovery is unavailable in this environment.');
+      const input = await body(req);
+      await authModule.updatePassword(input.accessToken, input.password);
+      return json(res, 200, { ok: true });
     }
 
     if (req.method === 'GET' && path === '/api/auth/me') return json(res, 200, await authContext(req));
@@ -277,4 +306,4 @@ const server = http.createServer(async (req, res) => {
 
 setInterval(() => store.expireOffers().catch?.((error) => console.error('expireOffers:', error.message)), 1000).unref();
 setInterval(() => store.activateScheduledBookings?.().catch?.((error) => console.error('activateScheduledBookings:', error.message)), 30_000).unref();
-server.listen(port, () => console.log(`SnapNest Dispatch v0.4 running on http://localhost:${port} (${store.mode})`));
+server.listen(port, () => console.log(`SnapNest Dispatch v0.5 running on http://localhost:${port} (${store.mode})`));
