@@ -12,8 +12,24 @@ jobs:
   build-field-test-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Dispatch
         uses: actions/checkout@v4
+
+      - name: Checkout official SnapNest brand
+        uses: actions/checkout@v4
+        with:
+          repository: oscarjacobis1-code/snapnestweb
+          path: .brand-source
+
+      - name: Use official SnapNest app mark
+        shell: bash
+        run: |
+          BRAND_SOURCE=".brand-source/snapnest-v2/favicon.png"
+          BRAND_DIR="apps/driver-android/app/src/main/res/drawable"
+          test -f "$BRAND_SOURCE"
+          mkdir -p "$BRAND_DIR"
+          rm -f "$BRAND_DIR/snapnest_brand.xml"
+          cp "$BRAND_SOURCE" "$BRAND_DIR/snapnest_brand.png"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
