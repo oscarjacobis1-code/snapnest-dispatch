@@ -13,7 +13,10 @@ function driverName(state, id) {
 
 function bookingStatusCopy(state, booking) {
   const driver = booking.assignedDriverId ? driverName(state, booking.assignedDriverId) : booking.currentOfferDriverId ? driverName(state, booking.currentOfferDriverId) : '';
-  if (booking.status === 'scheduled') return booking.scheduledFor ? `Scheduled ${dateTime(booking.scheduledFor)}` : 'Scheduled';
+  if (booking.status === 'scheduled') {
+    const when = booking.scheduledFor ? dateTime(booking.scheduledFor) : 'Scheduled';
+    return booking.reservedDriverId ? `${driverName(state, booking.reservedDriverId)} reserved · ${when}` : `Unassigned · ${when}`;
+  }
   if (booking.status === 'offering') return `Offer sent to ${driver}`;
   if (booking.status === 'assigned') return `${driver} heading to pickup`;
   if (booking.status === 'arrived') return `${driver} waiting${booking.arrivedAt ? ` · ${ago(booking.arrivedAt)}` : ''}`;
