@@ -207,7 +207,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/bookings') {
       checkBookingRate(req);
       const payload = parseStructuredTaxiRequest(await body(req));
-      return json(res, 201, await store.createBooking({ ...payload, source: 'web' }));
+      let source = 'web';
+      if (bearer(req)) {
+        const context = await authContext(req);
+        if (['admin', 'dispatcher'].includes(context.membership?.role)) source = 'dispatcher';
+      }
+      return json(res, 201, await store.createBooking({ ...payload, source }));
     }
 
     if (req.method === 'POST' && path === '/api/whatsapp/inbound') {
