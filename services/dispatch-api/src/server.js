@@ -255,12 +255,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await store.respondToOffer({ bookingId: responseMatch[1], driverId: input.driverId, accept: Boolean(input.accept) }));
     }
 
-    const tripMatch = path.match(/^\/api\/bookings\/([^/]+)\/(start|complete)$/);
+    const tripMatch = path.match(/^\/api\/bookings\/([^/]+)\/(arrive|start|complete)$/);
     if (req.method === 'POST' && tripMatch) {
       const context = await authContext(req);
       const input = await body(req);
       requireDriverAccess(context, input.driverId);
-      const action = tripMatch[2] === 'start' ? store.startTrip : store.completeTrip;
+      const action = tripMatch[2] === 'arrive' ? store.arriveTrip : tripMatch[2] === 'start' ? store.startTrip : store.completeTrip;
       return json(res, 200, await action({ bookingId: tripMatch[1], driverId: input.driverId }));
     }
 
