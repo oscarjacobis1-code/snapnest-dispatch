@@ -58,16 +58,15 @@ object DriverApi {
 
     private class ApiException(val status: Int, message: String) : IllegalStateException(message)
 
-    private fun connection(url: String, method: String, token: String? = null): HttpURLConnection {
-        return (URL(url).openConnection() as HttpURLConnection).apply {
+    private fun connection(url: String, method: String, token: String? = null): HttpURLConnection =
+        (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = 10000
-            readTimeout = 10000
+            connectTimeout = 10_000
+            readTimeout = 10_000
             setRequestProperty("Content-Type", "application/json")
             if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer $token")
             doInput = true
         }
-    }
 
     private fun readJson(conn: HttpURLConnection): JSONObject {
         val status = conn.responseCode
@@ -102,18 +101,14 @@ object DriverApi {
         val cleanBase = baseUrl.trimEnd('/')
         val conn = connection("$cleanBase/api/auth/login", "POST")
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer ->
-            writer.write(JSONObject().put("email", email).put("password", password).toString())
-        }
+        conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("email", email).put("password", password).toString()) }
         return sessionFromJson(cleanBase, readJson(conn))
     }
 
     private fun refresh(session: SessionStore.Session): SessionStore.Session {
         val conn = connection("${session.baseUrl}/api/auth/refresh", "POST")
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer ->
-            writer.write(JSONObject().put("refreshToken", session.refreshToken).toString())
-        }
+        conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("refreshToken", session.refreshToken).toString()) }
         val refreshed = sessionFromJson(session.baseUrl, readJson(conn))
         return refreshed.copy(
             driverName = refreshed.driverName.ifBlank { session.driverName },
@@ -149,8 +144,8 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/location", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use { writer ->
-                writer.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString())
+            conn.outputStream.bufferedWriter().use {
+                it.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString())
             }
             readJson(conn)
         }
@@ -160,9 +155,7 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/status", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use { writer ->
-                writer.write(JSONObject().put("status", status).toString())
-            }
+            conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("status", status).toString()) }
             readJson(conn)
         }
     }
@@ -214,21 +207,37 @@ object DriverApi {
         val conn = connection("${session.baseUrl}/api/state", "GET", session.accessToken)
         val json = readJson(conn)
         val drivers = json.optJSONArray("drivers") ?: JSONArray()
-        val driver = if (drivers.length() > 0) drivers.optJSONObject(0) else null
+
+        var driver: JSONObject? = null
+        for (i in 0 until drivers.length()) {
+            val candidate = drivers.optJSONObject(i) ?: continue
+            if (candidate.optString("id") == session.driverId) {
+                driver = candidate
+                break
+            }
+        }
+
         val bookings = json.optJSONArray("bookings") ?: JSONArray()
         var offer: ActiveOffer? = null
         var trip: ActiveTrip? = null
         for (i in 0 until bookings.length()) {
             val booking = bookings.optJSONObject(i) ?: continue
             when (booking.optString("status")) {
-                "offering" -> if (offer == null) offer = parseOffer(booking)
-                "assigned", "in_progress" -> if (trip == null) trip = parseTrip(booking)
+                "offering" -> {
+                    val offeredTo = booking.optString("currentOfferDriverId")
+                    if (offer == null && offeredTo == session.driverId) offer = parseOffer(booking)
+                }
+                "assigned", "in_progress" -> {
+                    val assignedTo = booking.optString("assignedDriverId")
+                    if (trip == null && assignedTo == session.driverId) trip = parseTrip(booking)
+                }
             }
         }
+
         DriverSnapshot(
             driverName = driver?.optString("name").orEmpty().ifBlank { session.driverName.ifBlank { "Driver" } },
             vehicle = driver?.optString("vehicle").orEmpty().ifBlank { session.vehicle },
-            driverStatus = driver?.optString("status").orEmpty().ifBlank { if (trip != null) "busy" else "available" },
+            driverStatus = driver?.optString("status").orEmpty().ifBlank { if (trip != null) "busy" else if (offer != null) "offered" else "available" },
             offer = offer,
             trip = trip
         )
@@ -238,8 +247,8 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/bookings/$bookingId/offer-response", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use { writer ->
-                writer.write(JSONObject().put("driverId", session.driverId).put("accept", accept).toString())
+            conn.outputStream.bufferedWriter().use {
+                it.write(JSONObject().put("driverId", session.driverId).put("accept", accept).toString())
             }
             readJson(conn)
         }
@@ -250,9 +259,7 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/bookings/$bookingId/$action", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use { writer ->
-                writer.write(JSONObject().put("driverId", session.driverId).toString())
-            }
+            conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("driverId", session.driverId).toString()) }
             readJson(conn)
         }
     }
@@ -270,7 +277,10 @@ object DriverApi {
     }
 
     fun acquirePttFloor(store: SessionStore): PttLease = pttFloorRequest(store, "acquire", null)
-    fun heartbeatPttFloor(store: SessionStore, leaseToken: String): PttLease = pttFloorRequest(store, "heartbeat", leaseToken)
+
+    fun heartbeatPttFloor(store: SessionStore, leaseToken: String): PttLease =
+        pttFloorRequest(store, "heartbeat", leaseToken)
+
     fun releasePttFloor(store: SessionStore, leaseToken: String): Boolean = withRefresh(store) { session ->
         val conn = connection("${session.baseUrl}/api/ptt/floor/release", "POST", session.accessToken)
         conn.doOutput = true
@@ -281,8 +291,8 @@ object DriverApi {
     private fun pttFloorRequest(store: SessionStore, action: String, leaseToken: String?): PttLease = withRefresh(store) { session ->
         val conn = connection("${session.baseUrl}/api/ptt/floor/$action", "POST", session.accessToken)
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use { writer ->
-            writer.write(if (leaseToken == null) "{}" else JSONObject().put("leaseToken", leaseToken).toString())
+        conn.outputStream.bufferedWriter().use {
+            it.write(if (leaseToken == null) "{}" else JSONObject().put("leaseToken", leaseToken).toString())
         }
         val json = readJson(conn)
         PttLease(
