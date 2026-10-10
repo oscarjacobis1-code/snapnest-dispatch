@@ -12,6 +12,9 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 class MainActivity : ComponentActivity() {
     lateinit var sessionStore: SessionStore
@@ -19,12 +22,33 @@ class MainActivity : ComponentActivity() {
 
     private var pendingDutyStatus: String? = null
 
+    var authCallbackUri by mutableStateOf<String?>(null)
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = 0xFF0D2A40.toInt()
         window.navigationBarColor = 0xFF071A27.toInt()
         sessionStore = SessionStore(this)
-        setContent { SnapNestDriverApp(this) }
+        captureAuthIntent(intent)
+        setContent { DispatchAppRoot(this) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureAuthIntent(intent)
+    }
+
+    private fun captureAuthIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "snapnestdispatch" && uri.host == "auth") {
+            authCallbackUri = uri.toString()
+        }
+    }
+
+    fun consumeAuthCallback() {
+        authCallbackUri = null
     }
 
     fun enableDuty(status: String = "available") {
