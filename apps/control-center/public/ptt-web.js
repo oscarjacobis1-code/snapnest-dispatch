@@ -1,4 +1,5 @@
 import { api } from '/session.js';
+import '/safety-watch.js';
 
 let room = null;
 let leaseToken = null;
