@@ -19,7 +19,7 @@ function database() {
 
 const first = (value) => Array.isArray(value) ? value[0] : value;
 
-export async function startOperatorShift({ tenantId, userId, role }) {
+export async function startOperatorShift({ tenantId, userId, role, email }) {
   const db = database();
   const current = first(await db.request('operator_shifts', {
     query: {
@@ -34,7 +34,10 @@ export async function startOperatorShift({ tenantId, userId, role }) {
     const rows = await db.request('operator_shifts', {
       method: 'PATCH',
       query: { id: `eq.${current.id}`, tenant_id: `eq.${tenantId}` },
-      body: { last_seen_at: new Date().toISOString() },
+      body: {
+        last_seen_at: new Date().toISOString(),
+        operator_email: String(email || current.operator_email || '').trim() || null
+      },
       prefer: 'return=representation'
     });
     return first(rows) || current;
@@ -45,6 +48,7 @@ export async function startOperatorShift({ tenantId, userId, role }) {
       tenant_id: tenantId,
       user_id: userId,
       role,
+      operator_email: String(email || '').trim() || null,
       started_at: new Date().toISOString(),
       last_seen_at: new Date().toISOString()
     },
@@ -70,7 +74,7 @@ export async function operatorShiftStatus({ tenantId, userId, handoverLimit = 8 
         tenant_id: `eq.${tenantId}`,
         ended_at: 'not.is.null',
         handover_note: 'not.is.null',
-        select: 'id,user_id,role,started_at,ended_at,handover_note,handover_snapshot',
+        select: 'id,user_id,operator_email,role,started_at,ended_at,handover_note,handover_snapshot',
         order: 'ended_at.desc',
         limit: Math.max(1, Math.min(20, Number(handoverLimit) || 8))
       }
