@@ -11,10 +11,16 @@
   "categories": ["business", "productivity", "navigation"],
   "icons": [
     {
-      "src": "https://snapnestsolutions.com/favicon.png",
-      "sizes": "any",
+      "src": "/icons/snapnest-192.png",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/snapnest-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
