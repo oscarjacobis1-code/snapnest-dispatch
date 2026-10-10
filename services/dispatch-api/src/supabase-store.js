@@ -1,9 +1,11 @@
-import { BOOKING_STATUS, DRIVER_STATUS, chooseNextDriver } from './dispatch-engine.js';
+import { BOOKING_STATUS, DRIVER_STATUS } from './dispatch-engine.js';
 import { SupabaseRest } from './supabase-rest.js';
 import { createOperationsModule } from './modules/operations.js';
+import { chooseDriverWithRoadEta } from './routing/mapbox-matrix.js';
 
 const first = (value) => Array.isArray(value) ? value[0] : value;
 const ms = (value) => value ? new Date(value).getTime() : null;
+const OFFER_ROUTE_FIELDS = 'driver_id,expires_at,eta_seconds,road_distance_km,routing_provider,routing_profile';
 
 export function createSupabaseStore(config) {
   const db = new SupabaseRest({
@@ -82,7 +84,11 @@ export function createSupabaseStore(config) {
       reassignCount: Number(row.reassign_count || 0),
       assignedDriverId: row.assigned_driver_id,
       currentOfferDriverId: activeOffer?.driver_id ?? null,
-      offerExpiresAt: activeOffer?.expires_at ? new Date(activeOffer.expires_at).getTime() : null
+      offerExpiresAt: activeOffer?.expires_at ? new Date(activeOffer.expires_at).getTime() : null,
+      offerEtaSeconds: activeOffer?.eta_seconds == null ? null : Number(activeOffer.eta_seconds),
+      offerRoadDistanceKm: activeOffer?.road_distance_km == null ? null : Number(activeOffer.road_distance_km),
+      offerRoutingProvider: activeOffer?.routing_provider || null,
+      offerRoutingProfile: activeOffer?.routing_profile || null
     };
   }
 
@@ -90,7 +96,7 @@ export function createSupabaseStore(config) {
     const t = await tenant();
     const rows = await db.request('bookings', { query: { id: `eq.${id}`, tenant_id: `eq.${t.id}`, select: '*', limit: 1 } });
     const row = first(rows); if (!row) throw new Error('Booking not found.');
-    const offers = await db.request('dispatch_offers', { query: { booking_id: `eq.${id}`, response: 'is.null', select: 'driver_id,expires_at', order: 'offered_at.desc', limit: 1 } });
+    const offers = await db.request('dispatch_offers', { query: { booking_id: `eq.${id}`, response: 'is.null', select: OFFER_ROUTE_FIELDS, order: 'offered_at.desc', limit: 1 } });
     return mapBooking(row, first(offers));
   }
 
@@ -102,7 +108,7 @@ export function createSupabaseStore(config) {
         driver_id: `eq.${driverId}`,
         response: 'is.null',
         expires_at: `gt.${new Date().toISOString()}`,
-        select: 'booking_id,driver_id,expires_at,offered_at',
+        select: `booking_id,${OFFER_ROUTE_FIELDS},offered_at`,
         order: 'offered_at.desc',
         limit: 1
       }
@@ -119,7 +125,7 @@ export function createSupabaseStore(config) {
     const [drivers, bookingRows, offerRows, events] = await Promise.all([
       driverRows(),
       db.request('bookings', { query: { tenant_id: `eq.${t.id}`, select: '*', order: 'created_at.desc', limit: 150 } }),
-      db.request('dispatch_offers', { query: { tenant_id: `eq.${t.id}`, response: 'is.null', select: 'booking_id,driver_id,expires_at,offered_at', order: 'offered_at.desc' } }),
+      db.request('dispatch_offers', { query: { tenant_id: `eq.${t.id}`, response: 'is.null', select: `booking_id,${OFFER_ROUTE_FIELDS},offered_at`, order: 'offered_at.desc' } }),
       db.request('dispatch_events', { query: { tenant_id: `eq.${t.id}`, select: 'id,event_type,payload,created_at', order: 'created_at.desc', limit: 40 } })
     ]);
     const offerByBooking = new Map();
@@ -170,15 +176,52 @@ export function createSupabaseStore(config) {
 
   async function offerNextDriver(booking) {
     const t = await tenant();
-    const next = chooseNextDriver({ drivers: await driverRows(), booking, attemptedDriverIds: await attemptedDriverIds(booking.id) });
+    const [drivers, attempts] = await Promise.all([driverRows(), attemptedDriverIds(booking.id)]);
+    const decision = await chooseDriverWithRoadEta({ drivers, booking, attemptedDriverIds: attempts });
+    const next = decision.driver;
     if (!next) {
       await db.request('bookings', { method: 'PATCH', query: { id: `eq.${booking.id}`, tenant_id: `eq.${t.id}` }, body: { status: BOOKING_STATUS.UNFULFILLED }, prefer: 'return=minimal' });
       await emit('booking.unfulfilled', { bookingId: booking.id });
       return bookingById(booking.id);
     }
+
     const expiresAt = new Date(Date.now() + Number(t.offer_timeout_seconds ?? 20) * 1000).toISOString();
-    await db.rpc('create_dispatch_offer', { p_tenant_id: t.id, p_booking_id: booking.id, p_driver_id: next.id, p_score: next.dispatchScore, p_distance_km: next.distanceKm, p_expires_at: expiresAt });
-    await emit('booking.offered', { bookingId: booking.id, driverId: next.id, distanceKm: next.distanceKm, score: next.dispatchScore });
+    const routed = decision.routed && Number.isFinite(Number(next.etaSeconds));
+    if (routed) {
+      await db.rpc('create_dispatch_offer_routed', {
+        p_tenant_id: t.id,
+        p_booking_id: booking.id,
+        p_driver_id: next.id,
+        p_score: next.routingScore,
+        p_distance_km: next.distanceKm,
+        p_eta_seconds: next.etaSeconds,
+        p_road_distance_km: next.roadDistanceKm,
+        p_routing_provider: next.routingProvider,
+        p_routing_profile: next.routingProfile,
+        p_expires_at: expiresAt
+      });
+    } else {
+      await db.rpc('create_dispatch_offer', {
+        p_tenant_id: t.id,
+        p_booking_id: booking.id,
+        p_driver_id: next.id,
+        p_score: next.dispatchScore,
+        p_distance_km: next.distanceKm,
+        p_expires_at: expiresAt
+      });
+    }
+
+    await emit('booking.offered', {
+      bookingId: booking.id,
+      driverId: next.id,
+      distanceKm: next.distanceKm,
+      score: routed ? next.routingScore : next.dispatchScore,
+      etaSeconds: routed ? next.etaSeconds : null,
+      roadDistanceKm: routed ? next.roadDistanceKm : null,
+      routingProvider: routed ? next.routingProvider : 'haversine',
+      routingProfile: routed ? next.routingProfile : null,
+      routingReason: decision.reason
+    });
     return bookingById(booking.id);
   }
 
