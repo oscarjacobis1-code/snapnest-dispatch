@@ -1,10 +1,40 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Book a Taxi · SnapNest Dispatch</title><link rel="stylesheet" href="/styles.css"></head><body><main class="shell" style="max-width:760px"><div class="hero"><div class="brand"><div class="logo">SD</div><div><strong>SnapNest Dispatch</strong><div class="muted">WhatsApp-style booking simulator</div></div></div><h1>Book a taxi without another app.</h1><p>This simulates the structured booking that WhatsApp will create after the customer shares a location and confirms the destination.</p></div><div class="card"><form id="form">
-<div class="field"><label>Passenger name</label><input name="passengerName" value="Demo Passenger"></div>
-<div class="field"><label>Pickup</label><select name="pickup"><option value="albertown">Albertown / Fifth Street</option><option value="stabroek">Stabroek Market</option><option value="movietowne">MovieTowne</option><option value="giftland">Giftland Mall</option></select></div>
-<div class="field"><label>Destination</label><input name="destination" value="Diamond, East Bank Demerara"></div>
-<div class="field"><label>Passengers</label><input name="passengers" type="number" min="1" max="8" value="1"></div>
-<div class="field"><label>Notes</label><textarea name="notes" placeholder="Landmark, luggage, special instructions"></textarea></div>
-<div class="row"><button class="btn success">Request taxi</button><a class="btn secondary" href="/">Back to dispatch</a></div></form><div id="result" style="margin-top:15px"></div></div></main><script>
-const places={albertown:{label:'Fifth Street, Albertown',lat:6.8208,lng:-58.1551},stabroek:{label:'Stabroek Market',lat:6.8121,lng:-58.1646},movietowne:{label:'MovieTowne',lat:6.8196,lng:-58.1219},giftland:{label:'Giftland Mall',lat:6.8237,lng:-58.1174}};
-document.querySelector('#form').onsubmit=async(e)=>{e.preventDefault();const f=new FormData(e.target);const payload={passengerName:f.get('passengerName'),passengers:Number(f.get('passengers')),notes:f.get('notes'),pickup:places[f.get('pickup')],destination:{label:f.get('destination')}};const r=await fetch('/api/bookings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();document.querySelector('#result').innerHTML=r.ok?`<div class="notice"><strong>${data.id}</strong> created. The dispatch engine is now offering the job to a suitable driver.</div>`:`<div class="notice">${data.error}</div>`;};
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102b40">
+  <title>Request a taxi · SnapNest Dispatch</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body{background:#f2f5f6;color:#172b37}.customer-shell{max-width:560px;margin:0 auto;padding:22px 16px 44px}
+    .customer-head{padding:25px 4px 19px}.customer-head h1{font-size:clamp(28px,7vw,39px);letter-spacing:-.04em;line-height:1.08;margin:14px 0 10px}.customer-head p{color:#64747e;line-height:1.5}
+    .customer-card{background:white;border:1px solid #dfe6e9;border-radius:18px;padding:22px;box-shadow:0 12px 35px rgba(16,43,64,.06)}
+    .customer-card .field{margin-bottom:16px}.customer-card input,.customer-card select{width:100%;box-sizing:border-box}
+    .customer-actions{display:grid;gap:10px;margin-top:18px}.customer-actions button{width:100%;min-height:47px}.customer-note{font-size:12px;line-height:1.55;color:#6d7b83;margin:15px 0 0}.location-row{display:flex;gap:8px;align-items:center}.location-row input{flex:1;min-width:0}.location-row button{white-space:nowrap}
+    #customerStatus{min-height:20px;color:#9e3a31;font-size:13px;margin-top:12px}
+  </style>
+</head>
+<body>
+  <main class="customer-shell">
+    <header class="customer-head">
+      <div class="brand"><div class="logo">SD</div><strong>SnapNest Dispatch</strong></div>
+      <h1>Your ride starts with a message.</h1>
+      <p>Tell the taxi base where to collect you. WhatsApp opens with your request ready to send.</p>
+    </header>
+    <section class="customer-card" aria-label="Taxi request">
+      <form id="customerForm">
+        <div class="field"><label for="customerName">Your name</label><input id="customerName" maxlength="80" autocomplete="name" required></div>
+        <div class="field"><label for="pickup">Pickup location or landmark</label><div class="location-row"><input id="pickup" maxlength="160" placeholder="e.g. Stabroek Market entrance" required><button class="btn secondary" id="useLocation" type="button">Use GPS</button></div></div>
+        <div class="field"><label for="destination">Where are you going?</label><input id="destination" maxlength="160" required></div>
+        <div class="field"><label for="passengers">Passengers</label><input id="passengers" type="number" min="1" max="8" value="1" required></div>
+        <div class="field"><label for="pickupTime">Pickup time</label><select id="pickupTime"><option value="now">As soon as possible</option><option value="later">Arrange a later time in the chat</option></select></div>
+        <div class="customer-actions"><button class="btn success" type="submit">Continue in WhatsApp</button></div>
+      </form>
+      <p class="customer-note">Check the message and tap Send in WhatsApp. Your ride is only requested after the base confirms it. If you used GPS, the coordinates are included in your message.</p>
+      <div id="customerStatus" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+  <script type="module" src="/customer-whatsapp.js"></script>
+</body>
+</html>

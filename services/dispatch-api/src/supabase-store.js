@@ -271,6 +271,7 @@ export function createSupabaseStore(config) {
     const membership = first(await db.request('memberships', { query: { tenant_id: `eq.${t.id}`, user_id: `eq.${user.id}`, select: 'tenant_id,user_id,role', limit: 1 } }));
     if (!membership) throw new Error('This account is not assigned to this taxi base.');
     const driver = first(await db.request('drivers', { query: { tenant_id: `eq.${t.id}`, auth_user_id: `eq.${user.id}`, select: 'id,display_name,vehicle_plate,status', limit: 1 } }));
+    if (membership.role === 'driver' && !driver) throw new Error('This driver account is not linked to a driver profile.');
     return { user: { id: user.id, email: user.email }, membership, driver: driver || null };
   }
 
@@ -288,6 +289,20 @@ export function createSupabaseStore(config) {
 
   const operations = createOperationsModule({ db, tenant, driverRows, bookingById, offerNextDriver, emit });
 
+  async function recordWhatsAppMessage(message) {
+    const t = await tenant();
+    const existing = await db.request('communications', { query: { tenant_id: `eq.${t.id}`, channel: 'eq.whatsapp', external_id: `eq.${message.externalId}`, select: 'id', limit: 1 } });
+    if (existing?.length) return false;
+    await db.request('communications', { method: 'POST', body: { tenant_id: t.id, channel: 'whatsapp', direction: 'inbound', external_id: message.externalId, payload: message }, prefer: 'return=minimal' });
+    await emit('whatsapp.received', { sender: message.sender, type: message.type });
+    return true;
+  }
+
+  async function listWhatsAppMessages(limit = 50) {
+    const t = await tenant();
+    return db.request('communications', { query: { tenant_id: `eq.${t.id}`, channel: 'eq.whatsapp', direction: 'eq.inbound', select: 'id,external_id,payload,created_at', order: 'created_at.desc', limit: Math.max(1, Math.min(100, Number(limit) || 50)) } });
+  }
+
   return {
     mode: 'supabase',
     publicState,
@@ -297,6 +312,8 @@ export function createSupabaseStore(config) {
     setDriverStatus,
     updateDriverLocation,
     createBooking: operations.createBooking,
+    recordWhatsAppMessage,
+    listWhatsAppMessages,
     rescheduleBooking: operations.rescheduleBooking,
     activateScheduledBookings: operations.activateScheduledBookings,
     reserveScheduledBooking: operations.reserveScheduledBooking,

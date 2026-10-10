@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 
 const port = 8799;
 const base = `http://127.0.0.1:${port}`;
@@ -21,7 +22,7 @@ async function waitForServer() {
 test.before(async () => {
   child = spawn(process.execPath, ['services/dispatch-api/src/server.js'], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SECRET_KEY: '', SUPABASE_PUBLISHABLE_KEY: '', LIVEKIT_URL: '', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
+    env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SECRET_KEY: '', SUPABASE_PUBLISHABLE_KEY: '', LIVEKIT_URL: '', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '', WHATSAPP_VERIFY_TOKEN: 'test-verify', WHATSAPP_APP_SECRET: 'test-app-secret', WHATSAPP_PHONE_NUMBER_ID: 'number-1', WHATSAPP_PUBLIC_NUMBER: '5926000000', WHATSAPP_ADAPTER_KEY: 'test-adapter' },
     stdio: 'ignore'
   });
   await waitForServer();
@@ -122,6 +123,43 @@ test('scheduled pickup can be rescheduled through the dispatcher API', async () 
   assert.equal((await update.json()).scheduledFor, scheduledFor);
   const state = await (await fetch(`${base}/api/state`)).json();
   assert.equal(state.bookings.find((item) => item.id === booking.id).scheduledFor, scheduledFor);
+});
+
+test('WhatsApp webhook rejects forgery and records authenticated customer messages for dispatch', async () => {
+  const challenge = await fetch(`${base}/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=test-verify&hub.challenge=12345`);
+  assert.equal(challenge.status, 200);
+  assert.equal(await challenge.text(), '12345');
+  const badChallenge = await fetch(`${base}/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=12345`);
+  assert.equal(badChallenge.status, 403);
+  const config = await (await fetch(`${base}/api/public-config`)).json();
+  assert.equal(config.whatsappNumber, '5926000000');
+
+  const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: {
+    metadata: { phone_number_id: 'number-1' }, contacts: [{ wa_id: '5926000011', profile: { name: 'Test Rider' } }],
+    messages: [{ id: 'wamid.test.1', from: '5926000011', type: 'text', text: { body: 'Pickup: Stabroek\nDestination: Diamond' } }]
+  } }] }] });
+  const endpoint = `${base}/api/whatsapp/webhook`;
+  const forged = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + '0'.repeat(64) }, body: raw });
+  assert.equal(forged.status, 401);
+  const signature = `sha256=${createHmac('sha256', 'test-app-secret').update(raw).digest('hex')}`;
+  const accepted = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': signature }, body: raw });
+  assert.equal(accepted.status, 200);
+  const inbox = await (await fetch(`${base}/api/whatsapp/inbox`)).json();
+  assert.equal(inbox.messages.filter((m) => m.external_id === 'wamid.test.1').length, 1);
+  const repeated = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': signature }, body: raw });
+  assert.equal(repeated.status, 200);
+  const afterRetry = await (await fetch(`${base}/api/whatsapp/inbox`)).json();
+  assert.equal(afterRetry.messages.filter((m) => m.external_id === 'wamid.test.1').length, 1);
+  assert.ok(!(await (await fetch(`${base}/api/state`)).json()).bookings.some((b) => b.passengerName === 'Test Rider'));
+});
+
+test('trusted adapter rejects callers without its server-side key', async () => {
+  const body = JSON.stringify({ passengerName: 'Forged Adapter', pickup: { label: 'A', lat: 6.81, lng: -58.16 }, destination: { label: 'B' } });
+  const rejected = await fetch(`${base}/api/whatsapp/inbound`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  assert.equal(rejected.status, 401);
+  const accepted = await fetch(`${base}/api/whatsapp/inbound`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-snapnest-webhook-key': 'test-adapter' }, body });
+  assert.equal(accepted.status, 201);
+  assert.equal((await accepted.json()).source, 'whatsapp');
 });
 
 test('PTT endpoints degrade safely when LiveKit is not configured', async () => {

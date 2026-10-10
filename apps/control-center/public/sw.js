@@ -1,4 +1,4 @@
-const CACHE = 'snapnest-dispatch-shell-v14';
+const CACHE = 'snapnest-dispatch-shell-v15';
 const SHELL = [
   '/',
   '/index.html',
@@ -15,13 +15,17 @@ const SHELL = [
   '/operator-shift-ui.js',
   '/live-trip-ui.js',
   '/pwa.js',
+  '/whatsapp-inbox.js',
   '/manifest.json',
   '/icons/snapnest-192.png',
   '/icons/snapnest-512.png',
   '/modules/format.js',
   '/modules/bookings-ui.js',
   '/modules/fleet-ui.js',
-  '/modules/people-support-ui.js'
+  '/modules/people-support-ui.js',
+  '/modules/whatsapp-format.js',
+  '/customer-whatsapp.js',
+  '/customer.html'
 ];
 
 self.addEventListener('install', (event) => {

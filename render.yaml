@@ -26,6 +26,14 @@ services:
         sync: false
       - key: WHATSAPP_ADAPTER_KEY
         generateValue: true
+      - key: WHATSAPP_PUBLIC_NUMBER
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
       - key: PTT_PROVIDER
         value: livekit
       - key: LIVEKIT_URL

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { createPttFloor } from './ptt/floor.js';
 import { createPttToken, liveKitPttConfig } from './ptt/livekit-provider.js';
 import { handleOperationsRequest } from './modules/operations-http.js';
 import { createAuthModule } from './modules/auth.js';
+import { incomingMessages, secureMatch, verifyMetaSignature } from './whatsapp/webhook.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = normalize(join(here, '../../../apps/control-center/public'));
@@ -24,8 +25,9 @@ function json(res, status, body) {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(data),
-    'access-control-allow-origin': '*',
+    'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer'
   });
   res.end(data);
@@ -40,6 +42,17 @@ async function body(req) {
   if (!raw) return {};
   try { return JSON.parse(raw); }
   catch { throw new HttpError(400, 'Invalid JSON body.'); }
+}
+
+async function rawBody(req, maxBytes = 256_000) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new HttpError(413, 'Webhook request too large.');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
@@ -104,9 +117,16 @@ function requireDriverAccess(context, driverId) {
   throw new HttpError(403, 'You can only update your own driver session.');
 }
 
+function requireDriverAction(context, driverId) {
+  if (store.mode === 'memory') return requireDriverAccess(context, driverId);
+  if (context.membership?.role !== 'driver' || !context.driver?.id || context.driver.id !== driverId) {
+    throw new HttpError(403, 'Only the linked driver can perform this action.');
+  }
+}
+
 function filterState(state, context) {
-  if (context.membership?.role !== 'driver' || !context.driver?.id) return state;
-  const driverId = context.driver.id;
+  if (context.membership?.role !== 'driver') return state;
+  const driverId = context.driver?.id;
   return {
     ...state,
     drivers: state.drivers.filter((d) => d.id === driverId),
@@ -117,7 +137,8 @@ function filterState(state, context) {
 
 const bookingRate = new Map();
 function checkBookingRate(req) {
-  const key = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown').split(',')[0].trim();
+  // Forwarded headers are attacker-controlled unless a trusted proxy validates them.
+  const key = String(req.socket.remoteAddress ?? 'unknown');
   const now = Date.now();
   const current = bookingRate.get(key) ?? { start: now, count: 0 };
   if (now - current.start > 60_000) { current.start = now; current.count = 0; }
@@ -136,15 +157,44 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
-        'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET,POST,OPTIONS',
-        'access-control-allow-headers': 'content-type,authorization,x-snapnest-webhook-key'
+        'cache-control': 'no-store'
       });
       return res.end();
     }
 
     if (req.method === 'GET' && path === '/api/health') {
       return json(res, 200, { ok: true, version: '0.5.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
+    }
+
+    if (req.method === 'GET' && path === '/api/public-config') {
+      const whatsappNumber = String(process.env.WHATSAPP_PUBLIC_NUMBER ?? '').replace(/\D/g, '');
+      return json(res, 200, { whatsappNumber: /^\d{8,15}$/.test(whatsappNumber) ? whatsappNumber : null });
+    }
+
+    if (req.method === 'GET' && path === '/api/whatsapp/webhook') {
+      const token = process.env.WHATSAPP_VERIFY_TOKEN;
+      const verified = url.searchParams.get('hub.mode') === 'subscribe' && secureMatch(token, url.searchParams.get('hub.verify_token'));
+      const challenge = url.searchParams.get('hub.challenge');
+      if (!verified || !/^\d{1,20}$/.test(challenge || '')) throw new HttpError(403, 'Webhook verification failed.');
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return res.end(challenge);
+    }
+
+    if (req.method === 'POST' && path === '/api/whatsapp/webhook') {
+      const secret = process.env.WHATSAPP_APP_SECRET;
+      const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      if (!secret || !phoneId) throw new HttpError(503, 'WhatsApp webhook is not configured.');
+      const raw = await rawBody(req);
+      if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], secret)) throw new HttpError(401, 'Invalid webhook signature.');
+      let event;
+      try { event = JSON.parse(raw.toString('utf8')); }
+      catch { throw new HttpError(400, 'Invalid webhook JSON.'); }
+      const messages = incomingMessages(event, String(phoneId));
+      for (const message of messages) {
+        try { await store.recordWhatsAppMessage(message); }
+        catch (error) { console.error('WhatsApp intake failed:', error.message); throw new HttpError(503, 'WhatsApp intake is temporarily unavailable.'); }
+      }
+      return json(res, 200, { received: messages.length });
     }
 
     if (req.method === 'POST' && path === '/api/auth/login') {
@@ -217,6 +267,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, filterState(await store.publicState(), context));
     }
 
+    if (req.method === 'GET' && path === '/api/whatsapp/inbox') {
+      const context = await authContext(req);
+      requireRole(context, ['admin', 'dispatcher']);
+      return json(res, 200, { messages: await store.listWhatsAppMessages(Number(url.searchParams.get('limit') || 50)) });
+    }
+
     if (await handleOperationsRequest({ req, res, path, url, store, authContext, requireRole, requireDriverAccess, body, json, HttpError })) return;
 
     const activeOfferMatch = path.match(/^\/api\/drivers\/([^/]+)\/active-offer$/);
@@ -228,8 +284,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/api/events') {
       const context = await authContext(req);
+      requireRole(context, ['admin', 'dispatcher']);
       if (store.mode !== 'memory') throw new HttpError(410, 'Realtime SSE is disabled in persistent mode; clients should poll /api/state.');
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': '*' });
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
       res.write(`event: snapshot\ndata: ${JSON.stringify(filterState(await store.publicState(), context))}\n\n`);
       const unsubscribe = store.subscribe((event) => res.write(`event: update\ndata: ${JSON.stringify(event)}\n\n`));
       req.on('close', unsubscribe);
@@ -240,19 +297,22 @@ const server = http.createServer(async (req, res) => {
       checkBookingRate(req);
       const payload = parseStructuredTaxiRequest(await body(req));
       let source = 'web';
-      if (bearer(req)) {
+      if (config.persistent || bearer(req)) {
         const context = await authContext(req);
-        if (['admin', 'dispatcher'].includes(context.membership?.role)) source = 'dispatcher';
+        requireRole(context, ['admin', 'dispatcher']);
+        source = 'dispatcher';
       }
       return json(res, 201, await store.createBooking({ ...payload, source }));
     }
 
     if (req.method === 'POST' && path === '/api/whatsapp/inbound') {
-      if (store.mode === 'supabase') {
-        const expected = String(process.env.WHATSAPP_ADAPTER_KEY ?? '');
-        if (!expected) throw new HttpError(503, 'WhatsApp adapter is not configured.');
-        if (req.headers['x-snapnest-webhook-key'] !== expected) throw new HttpError(401, 'Invalid WhatsApp adapter key.');
-      }
+      const expected = String(process.env.WHATSAPP_ADAPTER_KEY ?? '');
+      if (!expected) throw new HttpError(503, 'WhatsApp adapter is not configured.');
+      const supplied = String(req.headers['x-snapnest-webhook-key'] ?? '');
+      const expectedHash = createHash('sha256').update(expected).digest();
+      const suppliedHash = createHash('sha256').update(supplied).digest();
+      if (!timingSafeEqual(expectedHash, suppliedHash)) throw new HttpError(401, 'Invalid WhatsApp adapter key.');
+      checkBookingRate(req);
       const payload = parseStructuredTaxiRequest(await body(req));
       return json(res, 201, await store.createBooking({ ...payload, source: 'whatsapp' }));
     }
@@ -267,14 +327,14 @@ const server = http.createServer(async (req, res) => {
     const locationMatch = path.match(/^\/api\/drivers\/([^/]+)\/location$/);
     if (req.method === 'POST' && locationMatch) {
       const context = await authContext(req);
-      requireDriverAccess(context, locationMatch[1]);
+      requireDriverAction(context, locationMatch[1]);
       return json(res, 200, await store.updateDriverLocation(locationMatch[1], await body(req)));
     }
 
     const statusMatch = path.match(/^\/api\/drivers\/([^/]+)\/status$/);
     if (req.method === 'POST' && statusMatch) {
       const context = await authContext(req);
-      requireDriverAccess(context, statusMatch[1]);
+      requireDriverAction(context, statusMatch[1]);
       const input = await body(req);
       return json(res, 200, await store.setDriverStatus(statusMatch[1], input.status));
     }
@@ -283,7 +343,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && responseMatch) {
       const context = await authContext(req);
       const input = await body(req);
-      requireDriverAccess(context, input.driverId);
+      requireDriverAction(context, input.driverId);
       return json(res, 200, await store.respondToOffer({ bookingId: responseMatch[1], driverId: input.driverId, accept: Boolean(input.accept) }));
     }
 
@@ -291,7 +351,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && tripMatch) {
       const context = await authContext(req);
       const input = await body(req);
-      requireDriverAccess(context, input.driverId);
+      requireDriverAction(context, input.driverId);
       const action = tripMatch[2] === 'arrive' ? store.arriveTrip : tripMatch[2] === 'start' ? store.startTrip : store.completeTrip;
       return json(res, 200, await action({ bookingId: tripMatch[1], driverId: input.driverId }));
     }

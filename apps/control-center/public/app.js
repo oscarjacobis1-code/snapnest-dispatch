@@ -4,6 +4,7 @@ import { ago, dateTime, escapeHtml } from '/modules/format.js';
 import { bookingBucket, renderBookings, renderOverviewBookings, renderTrips } from '/modules/bookings-ui.js';
 import { idleFor, renderAnalytics, renderDrivers, renderEvents, renderOverviewDrivers, renderStats } from '/modules/fleet-ui.js';
 import { renderCustomers, renderSupport } from '/modules/people-support-ui.js';
+import { parseRequestText } from '/modules/whatsapp-format.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -257,6 +258,28 @@ function resetBookingForm() {
   $('#bookingFormStatus').textContent = '';
   $('#bookingFormStatus').className = 'form-status';
 }
+
+document.addEventListener('snapnest:whatsapp-draft', (event) => {
+  const message = event.detail || {};
+  resetBookingForm();
+  const fields = parseRequestText(message.text);
+  $('#passengerName').value = fields.name || message.name || '';
+  $('#passengerPhone').value = message.sender || '';
+  $('#pickupLabel').value = fields.pickup || message.location?.label || '';
+  $('#destinationLabel').value = fields.destination || '';
+  $('#passengers').value = /^\d+$/.test(fields.passengers || '') ? Math.max(1, Math.min(8, Number(fields.passengers))) : 1;
+  $('#bookingNotes').value = String(message.text || '').slice(0, 300);
+  const coords = message.location || (() => {
+    const match = String(fields.pickup || '').match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/);
+    return match ? { lat: Number(match[1]), lng: Number(match[2]) } : null;
+  })();
+  if (coords && Number.isFinite(Number(coords.lat)) && Math.abs(Number(coords.lat)) <= 90 && Number.isFinite(Number(coords.lng)) && Math.abs(Number(coords.lng)) <= 180) {
+    pickupPin = { lat: Number(coords.lat), lng: Number(coords.lng) };
+    pickupMarker = createPinMarker('pickup', [pickupPin.lng, pickupPin.lat]);
+    $('#pickupPinStatus').textContent = 'Pin set from WhatsApp';
+  }
+  openBookingDrawer();
+});
 
 async function submitBooking(event) {
   event.preventDefault();
