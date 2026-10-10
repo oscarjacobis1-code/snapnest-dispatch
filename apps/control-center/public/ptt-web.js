@@ -1,5 +1,6 @@
 import { api } from '/session.js';
 import '/safety-watch.js';
+import '/reservations-ui.js';
 
 let room = null;
 let leaseToken = null;
