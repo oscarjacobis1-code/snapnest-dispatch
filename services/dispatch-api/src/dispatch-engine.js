@@ -7,6 +7,7 @@ export const DRIVER_STATUS = Object.freeze({
 });
 
 export const BOOKING_STATUS = Object.freeze({
+  SCHEDULED: 'scheduled',
   PENDING: 'pending',
   OFFERING: 'offering',
   ASSIGNED: 'assigned',
@@ -14,6 +15,7 @@ export const BOOKING_STATUS = Object.freeze({
   IN_PROGRESS: 'in_progress',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
+  NO_SHOW: 'no_show',
   UNFULFILLED: 'unfulfilled'
 });
 
@@ -48,6 +50,13 @@ export function chooseNextDriver({ drivers, booking, attemptedDriverIds = [] }) 
   return rankDrivers({ drivers, pickup: booking.pickup }).find((d) => !attempted.has(d.id)) ?? null;
 }
 
+function parseScheduledFor(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error('Scheduled pickup time is invalid.');
+  return date.toISOString();
+}
+
 export function parseStructuredTaxiRequest(input = {}) {
   const pickup = input.pickup;
   const destination = input.destination;
@@ -55,6 +64,7 @@ export function parseStructuredTaxiRequest(input = {}) {
   const passengerPhone = String(input.passengerPhone ?? '').trim().slice(0, 32);
   const passengers = Math.max(1, Math.min(8, Number(input.passengers ?? 1) || 1));
   const notes = String(input.notes ?? '').trim().slice(0, 300);
+  const scheduledFor = parseScheduledFor(input.scheduledFor);
 
   if (!pickup || !Number.isFinite(Number(pickup.lat)) || !Number.isFinite(Number(pickup.lng))) {
     throw new Error('A valid pickup location is required.');
@@ -68,6 +78,7 @@ export function parseStructuredTaxiRequest(input = {}) {
     passengerPhone,
     passengers,
     notes,
+    scheduledFor,
     pickup: {
       label: String(pickup.label ?? 'Shared location').trim().slice(0, 160),
       lat: Number(pickup.lat),
