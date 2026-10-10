@@ -1,21 +1,39 @@
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.mjs';
 import { api, clearSession, membership } from '/session.js';
+import { ago, dateTime, escapeHtml } from '/modules/format.js';
+import { bookingBucket, renderBookings, renderOverviewBookings, renderTrips } from '/modules/bookings-ui.js';
+import { idleFor, renderAnalytics, renderDrivers, renderEvents, renderOverviewDrivers, renderStats } from '/modules/fleet-ui.js';
+import { renderCustomers, renderSupport } from '/modules/people-support-ui.js';
 
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => [...document.querySelectorAll(s)];
-const escapeHtml = (s='') => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
 const member = membership();
-let lastState = null;
+
+let state = null;
+let currentPage = 'overview';
 let bookingFilter = 'open';
+let managedBookingId = null;
 let pinMode = null;
 let pickupPin = null;
 let destinationPin = null;
 let pickupMarker = null;
 let destinationMarker = null;
 let fittedFleetOnce = false;
+let customerCache = [];
+let supportCache = [];
 const driverMarkers = new Map();
 
 if (member?.role === 'admin') $('#adminLink').style.display = 'flex';
+
+const pageCopy = {
+  overview: 'Fleet status, waiting jobs and active trips.',
+  bookings: 'Live, scheduled and completed requests from every channel.',
+  drivers: 'Availability, queue fairness and GPS freshness.',
+  trips: 'Completed, cancelled and no-show records.',
+  customers: 'Repeat customers captured automatically from real bookings.',
+  support: 'Operational and app issues reported from the field.',
+  analytics: 'Performance calculated from actual booking data.'
+};
 
 const map = new maplibregl.Map({
   container: 'map',
@@ -28,33 +46,6 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-function ago(value) {
-  if (!value) return '—';
-  const ms = Date.now() - new Date(value).getTime();
-  if (!Number.isFinite(ms)) return '—';
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.round(m / 60)}h ago`;
-}
-
-function idleFor(driver) {
-  if (!driver.availableSince || driver.status !== 'available') return '';
-  const m = Math.max(0, Math.round((Date.now() - Number(driver.availableSince)) / 60000));
-  return m < 1 ? 'just available' : `${m}m idle`;
-}
-
-function driverName(id) {
-  return lastState?.drivers?.find((d) => d.id === id)?.name || 'Driver';
-}
-
-function bookingBucket(status) {
-  if (['pending', 'offering'].includes(status)) return 'open';
-  if (['assigned', 'arrived', 'in_progress'].includes(status)) return 'active';
-  return 'done';
-}
-
 function setMapMode(text = 'Live tracking', pin = false) {
   const el = $('#mapMode');
   if (!el) return;
@@ -62,15 +53,25 @@ function setMapMode(text = 'Live tracking', pin = false) {
   el.classList.toggle('pin-mode', pin);
 }
 
-function updateFleetMap(drivers) {
+function openPage(name) {
+  currentPage = name;
+  $$('.dispatch-page').forEach((page) => page.classList.toggle('active', page.dataset.page === name));
+  $$('.dispatch-nav-item').forEach((item) => item.classList.toggle('active', item.dataset.pageTarget === name));
+  $('#pageSubtitle').textContent = pageCopy[name] || '';
+  if (name === 'overview') setTimeout(() => map.resize(), 0);
+  if (name === 'customers') loadCustomers();
+  if (name === 'support') loadSupport();
+}
+
+function updateFleetMap(drivers = []) {
   const liveIds = new Set();
   const bounds = new maplibregl.LngLatBounds();
   let positioned = 0;
 
-  drivers.forEach((driver) => {
+  for (const driver of drivers) {
     const lat = Number(driver.location?.lat);
     const lng = Number(driver.location?.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     liveIds.add(driver.id);
     positioned += 1;
     const point = [lng, lat];
@@ -84,112 +85,83 @@ function updateFleetMap(drivers) {
       el.setAttribute('aria-label', `${driver.name} vehicle location`);
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat(point)
-        .setPopup(new maplibregl.Popup({ offset: 21, closeButton: false }));
-      marker.addTo(map);
+        .setPopup(new maplibregl.Popup({ offset: 18, closeButton: false }))
+        .addTo(map);
       record = { marker, el };
       driverMarkers.set(driver.id, record);
     }
 
-    const initials = String(driver.name || 'D').trim().split(/\s+/).map((v) => v[0]).join('').slice(0, 2).toUpperCase();
+    const initials = String(driver.name || 'D').trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
     record.marker.setLngLat(point);
     record.el.className = `vehicle-marker ${driver.status}`;
     record.el.textContent = initials || 'D';
-    record.marker.getPopup().setHTML(
-      `<strong>${escapeHtml(driver.name)}</strong><br>${escapeHtml(driver.vehicle || 'Vehicle not set')}<br><span style="text-transform:capitalize">${escapeHtml(driver.status)}</span>${idleFor(driver) ? `<br><small>${escapeHtml(idleFor(driver))}</small>` : ''}<br><small>GPS ${escapeHtml(ago(driver.location?.capturedAt || driver.lastSeenAt))}</small>`
-    );
-  });
+    record.marker.getPopup().setHTML(`<strong>${escapeHtml(driver.name)}</strong><br>${escapeHtml(driver.vehicle || 'Vehicle not set')}<br><small>${escapeHtml(driver.status)} · GPS ${escapeHtml(ago(driver.location?.capturedAt || driver.lastSeenAt))}</small>`);
+  }
 
   for (const [id, record] of driverMarkers) {
-    if (!liveIds.has(id)) {
-      record.marker.remove();
-      driverMarkers.delete(id);
-    }
+    if (liveIds.has(id)) continue;
+    record.marker.remove();
+    driverMarkers.delete(id);
   }
 
-  if (!fittedFleetOnce && positioned > 0 && map.loaded()) {
+  if (!fittedFleetOnce && positioned && map.loaded()) {
     fittedFleetOnce = true;
     if (positioned === 1) map.easeTo({ center: bounds.getCenter(), zoom: 14 });
-    else map.fitBounds(bounds, { padding: 65, maxZoom: 14, duration: 0 });
+    else map.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 0 });
   }
 }
 
-function renderStats(state) {
-  const available = state.drivers.filter((d) => d.status === 'available').length;
-  const busy = state.drivers.filter((d) => d.status === 'busy').length;
-  const open = state.bookings.filter((b) => ['pending', 'offering'].includes(b.status)).length;
-  const active = state.bookings.filter((b) => ['assigned', 'arrived', 'in_progress'].includes(b.status)).length;
-  $('#stats').innerHTML = [
-    ['Available cars', available, 'available', `${state.drivers.length} total drivers`],
-    ['Busy cars', busy, 'busy', 'Assigned or on trip'],
-    ['Waiting', open, 'open', 'Needs a driver'],
-    ['Active trips', active, 'active', 'Pickup + in progress']
-  ].map(([label, value, kind, note]) => `<div class="dispatch-stat"><div class="dispatch-stat-top"><span class="dispatch-stat-label">${label}</span><i class="dispatch-stat-dot ${kind}"></i></div><strong>${value}</strong><small>${note}</small></div>`).join('');
-}
-
-function renderDrivers(state) {
-  const drivers = [...state.drivers].sort((a, b) => {
-    const order = { available: 0, offered: 1, busy: 2, unavailable: 3, offline: 4 };
-    return (order[a.status] ?? 9) - (order[b.status] ?? 9) || Number(a.queueRank ?? 999) - Number(b.queueRank ?? 999);
-  });
-  $('#driversBody').innerHTML = drivers.map((d) => `<tr>
-    <td><strong>${escapeHtml(d.name)}</strong><div class="muted">${escapeHtml(d.vehicle || 'Vehicle not set')}${idleFor(d) ? ` · ${escapeHtml(idleFor(d))}` : ''}</div></td>
-    <td><span class="badge ${escapeHtml(d.status)}"><i class="dot"></i>${escapeHtml(d.status)}</span></td>
-    <td>${d.queueRank ?? '—'}</td>
-    <td>${d.recentDeclines ?? 0}</td>
-    <td>${escapeHtml(ago(d.location?.capturedAt || d.lastSeenAt))}</td>
-  </tr>`).join('') || '<tr><td colspan="5" class="muted">No drivers found.</td></tr>';
-}
-
-function bookingCard(b) {
-  const driver = b.assignedDriverId ? driverName(b.assignedDriverId) : b.currentOfferDriverId ? driverName(b.currentOfferDriverId) : '';
-  const statusCopy = b.status === 'offering'
-    ? `Offer sent to ${driver}`
-    : b.status === 'assigned'
-      ? `${driver} heading to pickup`
-      : b.status === 'arrived'
-        ? `${driver} waiting at pickup${b.arrivedAt ? ` · ${ago(b.arrivedAt)}` : ''}`
-        : b.status === 'in_progress'
-          ? `${driver} on trip`
-          : b.status;
-  return `<article class="dispatch-booking">
-    <div class="dispatch-booking-head"><span class="booking-id">#${escapeHtml(String(b.id).slice(0, 8).toUpperCase())}</span><span class="badge ${escapeHtml(b.status)}">${escapeHtml(String(b.status).replace('_', ' '))}</span></div>
-    <div class="route-line"><i class="route-dot"></i><div><div class="route-label">Pickup</div><div class="route-value">${escapeHtml(b.pickup?.label || 'Pickup')}</div></div></div>
-    <div class="route-line destination"><i class="route-dot"></i><div><div class="route-label">Destination</div><div class="route-value">${escapeHtml(b.destination?.label || 'Destination')}</div></div></div>
-    <div class="booking-meta"><span>${escapeHtml(b.passengerName || 'Guest')}</span><span>•</span><span>${Number(b.passengers || 1)} pax</span><span>•</span><span>${escapeHtml(b.source || 'dispatch')}</span></div>
-    ${driver ? `<div class="booking-driver">${escapeHtml(statusCopy)}</div>` : ''}
-  </article>`;
-}
-
-function renderBookings(state) {
-  const filtered = state.bookings
-    .filter((b) => bookingBucket(b.status) === bookingFilter)
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  $('#bookings').innerHTML = filtered.length
-    ? filtered.map(bookingCard).join('')
-    : `<div class="empty-state"><strong>No ${bookingFilter} bookings</strong><span>${bookingFilter === 'open' ? 'New phone, WhatsApp and web requests will appear here.' : 'Nothing in this queue right now.'}</span></div>`;
-}
-
-function renderEvents(state) {
-  const events = (state.events || []).slice(0, 30);
-  $('#events').innerHTML = events.map((e) => `<div class="event"><strong>${escapeHtml(String(e.type).replaceAll('_', ' '))}</strong><span class="muted">${new Date(e.at).toLocaleTimeString()}</span> · <span class="mono">${escapeHtml(JSON.stringify(e.payload))}</span></div>`).join('') || '<div class="empty-state"><strong>No recent activity</strong><span>Operational events will appear here.</span></div>';
-}
-
-function render(state) {
-  lastState = state;
+function renderState(nextState) {
+  state = nextState;
   if (state.tenant?.name) $('#baseName').textContent = state.tenant.name;
-  $('#nightMode').textContent = state.nightMode ? 'Night automation ON' : 'Night automation OFF';
-  $('#nightMode').className = `btn ${state.nightMode ? 'success' : 'secondary'}`;
-  renderStats(state);
-  renderDrivers(state);
-  renderBookings(state);
-  renderEvents(state);
+  $('#nightMode').textContent = state.nightMode ? 'Night automation on' : 'Night automation off';
+  $('#nightMode').classList.toggle('is-on', Boolean(state.nightMode));
+
+  renderStats($('#stats'), state);
+  renderOverviewBookings($('#overviewBookings'), state);
+  renderOverviewDrivers($('#overviewDrivers'), state);
+  renderEvents($('#overviewEvents'), state);
+  renderBookings($('#bookings'), state, bookingFilter);
+  renderDrivers($('#driversBody'), state);
+  renderTrips($('#tripsList'), state);
+  renderAnalytics($('#analyticsGrid'), state);
   updateFleetMap(state.drivers);
+
+  if (managedBookingId) populateManageDrawer();
+}
+
+async function refresh() {
+  try {
+    renderState(await api('/api/state'));
+  } catch (error) {
+    if (!String(error.message).includes('Sign in')) console.error('State refresh failed', error);
+  }
+}
+
+async function loadCustomers() {
+  try {
+    const result = await api('/api/customers?limit=150');
+    customerCache = result.customers || [];
+    renderCustomers($('#customersList'), customerCache);
+  } catch (error) {
+    $('#customersList').innerHTML = `<div class="empty-state"><strong>Could not load customers</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
+async function loadSupport() {
+  try {
+    const result = await api('/api/support?limit=150');
+    supportCache = result.tickets || [];
+    renderSupport($('#supportList'), supportCache);
+  } catch (error) {
+    $('#supportList').innerHTML = `<div class="empty-state"><strong>Could not load support</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
 }
 
 function openBookingDrawer() {
   $('#bookingDrawer').classList.add('open');
   $('#bookingDrawer').setAttribute('aria-hidden', 'false');
-  setTimeout(() => $('#passengerName')?.focus(), 50);
+  setTimeout(() => $('#passengerName')?.focus(), 30);
 }
 
 function closeBookingDrawer() {
@@ -197,21 +169,55 @@ function closeBookingDrawer() {
   $('#bookingDrawer').setAttribute('aria-hidden', 'true');
 }
 
+function openManageDrawer(bookingId) {
+  managedBookingId = bookingId;
+  populateManageDrawer();
+  $('#manageDrawer').classList.add('open');
+  $('#manageDrawer').setAttribute('aria-hidden', 'false');
+}
+
+function closeManageDrawer() {
+  managedBookingId = null;
+  $('#manageDrawer').classList.remove('open');
+  $('#manageDrawer').setAttribute('aria-hidden', 'true');
+  $('#manageStatus').textContent = '';
+  $('#cancelReason').value = '';
+}
+
+function managedBooking() {
+  return state?.bookings?.find((booking) => booking.id === managedBookingId) || null;
+}
+
+function populateManageDrawer() {
+  const booking = managedBooking();
+  if (!booking) return;
+  const assigned = state.drivers.find((driver) => driver.id === booking.assignedDriverId);
+  $('#manageTitle').textContent = `#${String(booking.id).slice(0, 8).toUpperCase()}`;
+  $('#manageSummary').innerHTML = `<div class="manage-route"><span>Pickup</span><strong>${escapeHtml(booking.pickup?.label || 'Pickup')}</strong></div>
+    <div class="manage-route destination"><span>Destination</span><strong>${escapeHtml(booking.destination?.label || 'Destination')}</strong></div>
+    <div class="manage-meta"><span>${escapeHtml(booking.passengerName || 'Guest')}</span><span>${escapeHtml(booking.status)}</span>${booking.scheduledFor ? `<span>${escapeHtml(dateTime(booking.scheduledFor))}</span>` : ''}${assigned ? `<span>${escapeHtml(assigned.name)}</span>` : ''}</div>`;
+
+  const eligible = state.drivers.filter((driver) => driver.status === 'available' || driver.id === booking.assignedDriverId);
+  $('#manageDriver').innerHTML = `<option value="">Choose available driver</option>${eligible.map((driver) => `<option value="${escapeHtml(driver.id)}" ${driver.id === booking.assignedDriverId ? 'selected' : ''}>${escapeHtml(driver.name)} · ${escapeHtml(driver.vehicle || 'No vehicle')} ${idleFor(driver) ? `· ${escapeHtml(idleFor(driver))}` : ''}</option>`).join('')}`;
+
+  const terminal = ['completed', 'cancelled', 'no_show'].includes(booking.status);
+  $('#manageAssign').hidden = terminal || booking.status === 'in_progress' || booking.status === 'scheduled';
+  $('#requeueButton').hidden = terminal || booking.status === 'in_progress' || booking.status === 'scheduled';
+  $('#noShowButton').hidden = booking.status !== 'arrived';
+  $('#cancelBookingButton').hidden = booking.status === 'completed' || booking.status === 'cancelled' || booking.status === 'no_show';
+}
+
 function createPinMarker(kind, lngLat) {
   const el = document.createElement('div');
-  el.style.width = '20px';
-  el.style.height = '20px';
-  el.style.borderRadius = '50%';
-  el.style.border = '3px solid white';
-  el.style.boxShadow = '0 3px 10px rgba(0,0,0,.25)';
-  el.style.background = kind === 'pickup' ? '#1f9d62' : '#ef6a00';
+  el.className = `pin-marker ${kind}`;
   return new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
 }
 
 function beginPin(kind) {
   pinMode = kind;
   closeBookingDrawer();
-  setMapMode(`Click map to set ${kind}`, true);
+  openPage('overview');
+  setMapMode(`Set ${kind} on map`, true);
   map.getCanvas().style.cursor = 'crosshair';
 }
 
@@ -221,12 +227,12 @@ function finishPin(kind, lngLat) {
     pickupPin = value;
     pickupMarker?.remove();
     pickupMarker = createPinMarker('pickup', lngLat);
-    $('#pickupPinStatus').textContent = `${value.lat}, ${value.lng}`;
+    $('#pickupPinStatus').textContent = 'Pickup set';
   } else {
     destinationPin = value;
     destinationMarker?.remove();
     destinationMarker = createPinMarker('destination', lngLat);
-    $('#destinationPinStatus').textContent = `${value.lat}, ${value.lng}`;
+    $('#destinationPinStatus').textContent = 'Destination set';
   }
   pinMode = null;
   map.getCanvas().style.cursor = '';
@@ -243,8 +249,8 @@ function resetBookingForm() {
   destinationMarker?.remove();
   pickupMarker = null;
   destinationMarker = null;
-  $('#pickupPinStatus').textContent = 'No map pin yet';
-  $('#destinationPinStatus').textContent = 'Optional';
+  $('#pickupPinStatus').textContent = 'Pin required';
+  $('#destinationPinStatus').textContent = 'Pin optional';
   $('#bookingFormStatus').textContent = '';
   $('#bookingFormStatus').className = 'form-status';
 }
@@ -256,33 +262,36 @@ async function submitBooking(event) {
   const pickupLabel = $('#pickupLabel').value.trim();
   const destinationLabel = $('#destinationLabel').value.trim();
   if (!pickupPin) {
-    status.textContent = 'Pin the pickup on the map before dispatching.';
+    status.textContent = 'Set the pickup on the map.';
     status.className = 'form-status error';
     return;
   }
   if (!pickupLabel || !destinationLabel) {
-    status.textContent = 'Pickup and destination names are required.';
+    status.textContent = 'Pickup and destination are required.';
     status.className = 'form-status error';
     return;
   }
 
+  const scheduledValue = $('#scheduledFor').value;
   const payload = {
     passengerName: $('#passengerName').value.trim() || 'Guest',
     passengerPhone: $('#passengerPhone').value.trim(),
     passengers: Number($('#passengers').value || 1),
     notes: $('#bookingNotes').value.trim(),
+    scheduledFor: scheduledValue ? new Date(scheduledValue).toISOString() : null,
     pickup: { label: pickupLabel, ...pickupPin },
     destination: { label: destinationLabel, lat: destinationPin?.lat ?? null, lng: destinationPin?.lng ?? null }
   };
 
   button.disabled = true;
-  status.textContent = 'Creating booking and finding a driver…';
+  status.textContent = payload.scheduledFor ? 'Scheduling booking…' : 'Creating booking…';
   status.className = 'form-status';
   try {
-    await api('/api/bookings', { method: 'POST', body: JSON.stringify(payload) });
-    status.textContent = 'Booking created.';
+    const created = await api('/api/bookings', { method:'POST', body:JSON.stringify(payload) });
+    status.textContent = created.status === 'scheduled' ? 'Booking scheduled.' : 'Booking created and dispatch started.';
     status.className = 'form-status success';
     await refresh();
+    await loadCustomers();
     setTimeout(() => { closeBookingDrawer(); resetBookingForm(); }, 450);
   } catch (error) {
     status.textContent = error.message || 'Could not create booking.';
@@ -292,49 +301,119 @@ async function submitBooking(event) {
   }
 }
 
-async function refresh() {
+async function assignManagedBooking() {
+  const booking = managedBooking();
+  const driverId = $('#manageDriver').value;
+  if (!booking || !driverId) return;
+  const status = $('#manageStatus');
+  status.textContent = 'Assigning driver…';
   try {
-    render(await api('/api/state'));
+    await api(`/api/bookings/${encodeURIComponent(booking.id)}/assign`, { method:'POST', body:JSON.stringify({ driverId }) });
+    status.textContent = 'Driver assigned.';
+    status.className = 'form-status success';
+    await refresh();
   } catch (error) {
-    if (!String(error.message).includes('Sign in')) console.error(error);
+    status.textContent = error.message;
+    status.className = 'form-status error';
   }
 }
 
-map.on('load', () => { if (lastState) updateFleetMap(lastState.drivers); });
-map.on('click', (event) => { if (pinMode) finishPin(pinMode, event.lngLat); });
+async function requeueManagedBooking() {
+  const booking = managedBooking();
+  if (!booking) return;
+  const status = $('#manageStatus');
+  status.textContent = 'Finding another driver…';
+  try {
+    await api(`/api/bookings/${encodeURIComponent(booking.id)}/requeue`, { method:'POST', body:'{}' });
+    status.textContent = 'Booking returned to dispatch queue.';
+    status.className = 'form-status success';
+    await refresh();
+  } catch (error) {
+    status.textContent = error.message;
+    status.className = 'form-status error';
+  }
+}
 
-$('#newBookingButton').onclick = openBookingDrawer;
+async function cancelManagedBooking(noShow = false) {
+  const booking = managedBooking();
+  if (!booking) return;
+  const reason = $('#cancelReason').value.trim();
+  const status = $('#manageStatus');
+  if (!reason) {
+    status.textContent = 'Enter a reason first.';
+    status.className = 'form-status error';
+    return;
+  }
+  status.textContent = noShow ? 'Recording no-show…' : 'Cancelling booking…';
+  try {
+    const action = noShow ? 'no-show' : 'cancel';
+    await api(`/api/bookings/${encodeURIComponent(booking.id)}/${action}`, { method:'POST', body:JSON.stringify({ reason, code:noShow ? 'passenger_no_show' : 'dispatcher_cancelled' }) });
+    status.textContent = noShow ? 'No-show recorded.' : 'Booking cancelled.';
+    status.className = 'form-status success';
+    await refresh();
+    setTimeout(closeManageDrawer, 450);
+  } catch (error) {
+    status.textContent = error.message;
+    status.className = 'form-status error';
+  }
+}
+
+async function resolveTicket(ticketId) {
+  const button = document.querySelector(`[data-resolve-ticket="${CSS.escape(ticketId)}"]`);
+  if (button) { button.disabled = true; button.textContent = 'Resolving…'; }
+  try {
+    await api(`/api/support/${encodeURIComponent(ticketId)}/resolve`, { method:'POST', body:JSON.stringify({ resolutionNote:'' }) });
+    await loadSupport();
+  } catch (error) {
+    console.error('Could not resolve support ticket', error);
+    if (button) { button.disabled = false; button.textContent = 'Resolve'; }
+  }
+}
+
+$$('.dispatch-nav-item').forEach((button) => button.addEventListener('click', () => openPage(button.dataset.pageTarget)));
+$$('[data-open-page]').forEach((button) => button.addEventListener('click', () => openPage(button.dataset.openPage)));
 $$('[data-close-booking]').forEach((el) => el.addEventListener('click', closeBookingDrawer));
-$('#pinPickup').onclick = () => beginPin('pickup');
-$('#pinDestination').onclick = () => beginPin('destination');
+$$('[data-close-manage]').forEach((el) => el.addEventListener('click', closeManageDrawer));
+
+$('#newBookingButton').addEventListener('click', openBookingDrawer);
+$('#pinPickup').addEventListener('click', () => beginPin('pickup'));
+$('#pinDestination').addEventListener('click', () => beginPin('destination'));
 $('#bookingForm').addEventListener('submit', submitBooking);
+$('#assignDriverButton').addEventListener('click', assignManagedBooking);
+$('#requeueButton').addEventListener('click', requeueManagedBooking);
+$('#cancelBookingButton').addEventListener('click', () => cancelManagedBooking(false));
+$('#noShowButton').addEventListener('click', () => cancelManagedBooking(true));
 
 $$('.booking-tab').forEach((button) => button.addEventListener('click', () => {
   bookingFilter = button.dataset.bookingFilter;
-  $$('.booking-tab').forEach((b) => b.classList.toggle('active', b === button));
-  if (lastState) renderBookings(lastState);
+  $$('.booking-tab').forEach((item) => item.classList.toggle('active', item === button));
+  if (state) renderBookings($('#bookings'), state, bookingFilter);
 }));
 
-$$('.dispatch-nav-item').forEach((button) => button.addEventListener('click', () => {
-  $$('.dispatch-nav-item').forEach((b) => b.classList.toggle('active', b === button));
-  const section = button.dataset.section;
-  if (section === 'overview') window.scrollTo({ top: 0, behavior: 'smooth' });
-  else document.querySelector(`[data-panel="${section}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}));
-
-$('#nightMode').onclick = async () => {
-  await api('/api/night-mode', { method: 'POST', body: JSON.stringify({ enabled: !lastState?.nightMode }) });
-  await refresh();
-};
-$('#logout').onclick = () => { clearSession(); location.href = '/login.html'; };
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeBookingDrawer();
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault();
-    openBookingDrawer();
-  }
+document.addEventListener('click', (event) => {
+  const manage = event.target.closest('[data-manage-booking]');
+  if (manage) openManageDrawer(manage.dataset.manageBooking);
+  const resolve = event.target.closest('[data-resolve-ticket]');
+  if (resolve) resolveTicket(resolve.dataset.resolveTicket);
 });
 
+$('#nightMode').addEventListener('click', async () => {
+  if (!state) return;
+  try {
+    await api('/api/night-mode', { method:'POST', body:JSON.stringify({ enabled: !state.nightMode }) });
+    await refresh();
+  } catch (error) { console.error(error); }
+});
+
+$('#logout').addEventListener('click', () => {
+  clearSession();
+  location.href = '/login.html';
+});
+
+map.on('load', () => { if (state) updateFleetMap(state.drivers); });
+map.on('click', (event) => { if (pinMode) finishPin(pinMode, event.lngLat); });
+
+openPage('overview');
 await refresh();
-setInterval(refresh, 1800);
+setInterval(refresh, 5000);
+setInterval(() => { if (currentPage === 'support') loadSupport(); }, 15000);
