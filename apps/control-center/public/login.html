@@ -1,6 +1,205 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · SnapNest Dispatch</title><link rel="stylesheet" href="/styles.css"></head><body><main class="shell" style="max-width:520px;padding-top:8vh"><div class="card"><div class="brand" style="margin-bottom:24px"><div class="logo">SD</div><div><strong>SnapNest Dispatch</strong><div class="muted">Base access</div></div></div><form id="loginForm"><label>Email</label><input id="email" type="email" autocomplete="username" required style="width:100%;margin:8px 0 16px"><label>Password</label><input id="password" type="password" autocomplete="current-password" required style="width:100%;margin:8px 0 16px"><button class="btn" style="width:100%" type="submit">Sign in</button><div id="error" class="muted" style="margin-top:14px"></div></form></div></main><script type="module">
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · SnapNest Dispatch</title>
+  <style>
+    :root{color-scheme:dark;--ink:#061722;--navy:#0d2a40;--orange:#ef6a00;--white:#f8fafb;--muted:#9fb0bc;--red:#ef5a67;--line:rgba(255,255,255,.12)}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--ink);color:var(--white);overflow-x:hidden}
+    body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 72% 18%,rgba(23,63,95,.75),transparent 32%),radial-gradient(circle at 15% 84%,rgba(239,106,0,.12),transparent 28%),linear-gradient(145deg,#061722 0%,#0a2232 52%,#061722 100%);z-index:-2}
+    body:after{content:"";position:fixed;inset:0;opacity:.19;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:76px 76px;mask-image:linear-gradient(to bottom,black,transparent 78%);z-index:-1}
+    .auth-shell{min-height:100vh;display:grid;place-items:center;padding:28px 18px}.auth-wrap{width:min(100%,420px)}
+    .brand{display:flex;align-items:center;gap:11px;margin:0 0 18px 4px}.brand-mark{width:32px;height:32px;border-radius:10px;background:var(--navy);border:1px solid var(--line);position:relative;box-shadow:0 10px 28px rgba(0,0,0,.25)}.brand-mark:after{content:"";position:absolute;left:8px;right:8px;bottom:7px;height:3px;border-radius:999px;background:var(--orange)}
+    .brand strong{display:block;font-size:14px;letter-spacing:.01em}.brand span{display:block;margin-top:2px;color:var(--muted);font-size:10px}
+    .auth-card{background:rgba(12,37,52,.78);border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:0 26px 70px rgba(0,0,0,.32);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+    .auth-card h1{font-size:24px;line-height:1.1;margin:0;font-weight:650}.auth-card .intro{margin:7px 0 20px;color:var(--muted);font-size:11px;line-height:1.5}
+    label{display:block;color:var(--muted);font-size:10px;font-weight:700;margin-bottom:6px}input{width:100%;height:48px;border-radius:13px;border:1px solid var(--line);background:rgba(4,20,30,.62);color:var(--white);padding:0 13px;font:inherit;font-size:13px;outline:none}input:focus{border-color:rgba(239,106,0,.72);box-shadow:0 0 0 3px rgba(239,106,0,.1)}.field{margin-bottom:13px}
+    button{font:inherit}.primary{width:100%;height:50px;border:0;border-radius:13px;background:var(--orange);color:white;font-weight:750;cursor:pointer}.primary:disabled,.sso:disabled{opacity:.55;cursor:not-allowed}.forgot{display:block;margin:-3px 0 15px auto;border:0;background:transparent;color:#c2ced5;font-size:10px;cursor:pointer;padding:2px 0}
+    .divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#748895;font-size:9px}.divider:before,.divider:after{content:"";height:1px;background:var(--line);flex:1}
+    .sso-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sso{height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.055);color:var(--white);font-weight:650;font-size:11px;cursor:pointer}.sso:hover{background:rgba(255,255,255,.09)}
+    .status{min-height:18px;margin-top:12px;color:var(--muted);font-size:10px;line-height:1.45}.status.error{color:var(--red)}.status.success{color:#62df98}.powered{text-align:center;color:#667b88;font-size:9px;margin-top:15px}
+    .hidden{display:none!important}.back{border:0;background:transparent;color:var(--muted);font-size:10px;padding:0;margin-bottom:16px;cursor:pointer}.reset-note{padding:10px 12px;border-radius:12px;background:rgba(239,106,0,.08);color:#d8e1e6;font-size:10px;line-height:1.45;margin-bottom:14px}
+    @media(max-width:480px){.auth-shell{align-items:end;padding:18px}.auth-card{border-radius:22px;padding:19px}.sso-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="auth-shell">
+  <div class="auth-wrap">
+    <div class="brand"><div class="brand-mark" aria-hidden="true"></div><div><strong>SnapNest Dispatch</strong><span>Control Center</span></div></div>
+
+    <section id="loginPanel" class="auth-card">
+      <h1>Sign in</h1>
+      <p class="intro">Dispatcher and administrator access.</p>
+      <form id="loginForm">
+        <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+        <button id="forgotButton" class="forgot" type="button">Forgot password?</button>
+        <button id="signInButton" class="primary" type="submit">Sign in</button>
+      </form>
+      <div class="divider">OR</div>
+      <div class="sso-grid">
+        <button id="googleButton" class="sso" type="button">Continue with Google</button>
+        <button id="microsoftButton" class="sso" type="button">Continue with Microsoft</button>
+      </div>
+      <div id="loginStatus" class="status" role="status"></div>
+    </section>
+
+    <section id="forgotPanel" class="auth-card hidden">
+      <button class="back" type="button" data-back-login>← Back to sign in</button>
+      <h1>Reset password</h1>
+      <p class="intro">Enter the email on your SnapNest Dispatch account.</p>
+      <form id="forgotForm">
+        <div class="field"><label for="resetEmail">Email</label><input id="resetEmail" type="email" autocomplete="email" required></div>
+        <button id="resetSendButton" class="primary" type="submit">Send reset link</button>
+      </form>
+      <div id="forgotStatus" class="status" role="status"></div>
+    </section>
+
+    <section id="newPasswordPanel" class="auth-card hidden">
+      <h1>Choose a new password</h1>
+      <p class="intro">Use at least 8 characters.</p>
+      <div class="reset-note">This recovery link is single-use. Finish the password change on this device.</div>
+      <form id="newPasswordForm">
+        <div class="field"><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+        <div class="field"><label for="confirmPassword">Confirm password</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+        <button id="newPasswordButton" class="primary" type="submit">Update password</button>
+      </form>
+      <div id="newPasswordStatus" class="status" role="status"></div>
+    </section>
+
+    <div class="powered">Powered by SnapNest Digital Solutions</div>
+  </div>
+</main>
+
+<script type="module">
 import { signIn } from '/supabase-client.js';
-import { saveSession } from '/session.js';
-const form=document.querySelector('#loginForm'),error=document.querySelector('#error');
-form.onsubmit=async(e)=>{e.preventDefault();error.textContent='Signing in…';try{const session=await signIn(document.querySelector('#email').value,document.querySelector('#password').value);saveSession(session);const next=new URLSearchParams(location.search).get('next')||'/';location.href=next;}catch(err){error.textContent=err.message;}};
-</script></body></html>
+import { saveSession, clearSession } from '/session.js';
+
+const $ = (selector) => document.querySelector(selector);
+const next = new URLSearchParams(location.search).get('next') || '/';
+let recoveryAccessToken = '';
+
+function status(el, message, kind = '') {
+  el.textContent = message || '';
+  el.className = `status ${kind}`.trim();
+}
+function show(panel) {
+  ['#loginPanel','#forgotPanel','#newPasswordPanel'].forEach((selector) => $(selector).classList.toggle('hidden', selector !== panel));
+}
+function requireControlCenterRole(session) {
+  const role = session?.membership?.role;
+  if (!['admin','dispatcher'].includes(role)) throw new Error('This account does not have Control Center access.');
+  return session;
+}
+async function sessionFromTokens(accessToken, refreshToken, expiresIn) {
+  const response = await fetch('/api/auth/session', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body:JSON.stringify({ accessToken, refreshToken, expiresIn })
+  });
+  const data = await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(data.error || 'Could not complete sign in.');
+  return requireControlCenterRole(data);
+}
+
+async function handleAuthCallback() {
+  const hash = new URLSearchParams(location.hash.replace(/^#/,''));
+  const errorDescription = hash.get('error_description');
+  if (errorDescription) {
+    status($('#loginStatus'), errorDescription, 'error');
+    history.replaceState({},'',location.pathname + location.search);
+    return;
+  }
+  const accessToken = hash.get('access_token');
+  if (!accessToken) return;
+  const type = hash.get('type');
+  if (type === 'recovery' || new URLSearchParams(location.search).get('mode') === 'recovery') {
+    recoveryAccessToken = accessToken;
+    show('#newPasswordPanel');
+    history.replaceState({},'',`${location.pathname}?mode=recovery`);
+    return;
+  }
+  const refreshToken = hash.get('refresh_token');
+  status($('#loginStatus'),'Completing sign in…');
+  try {
+    const session = await sessionFromTokens(accessToken, refreshToken, hash.get('expires_in'));
+    saveSession(session);
+    location.replace(next);
+  } catch (error) {
+    clearSession();
+    status($('#loginStatus'), error.message, 'error');
+    history.replaceState({},'',location.pathname + (next !== '/' ? `?next=${encodeURIComponent(next)}` : ''));
+  }
+}
+
+$('#loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#signInButton'); button.disabled = true;
+  status($('#loginStatus'),'Signing in…');
+  try {
+    const session = requireControlCenterRole(await signIn($('#email').value.trim(), $('#password').value));
+    saveSession(session);
+    location.href = next;
+  } catch (error) {
+    clearSession();
+    status($('#loginStatus'), error.message, 'error');
+  } finally { button.disabled = false; }
+});
+
+$('#forgotButton').addEventListener('click', () => {
+  $('#resetEmail').value = $('#email').value.trim();
+  status($('#forgotStatus'),''); show('#forgotPanel');
+});
+document.querySelectorAll('[data-back-login]').forEach((button) => button.addEventListener('click', () => show('#loginPanel')));
+
+$('#forgotForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#resetSendButton'); button.disabled = true;
+  status($('#forgotStatus'),'Sending reset link…');
+  try {
+    const redirectTo = `${location.origin}/login.html?mode=recovery`;
+    const response = await fetch('/api/auth/password-reset', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ email:$('#resetEmail').value.trim(), redirectTo }) });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(data.error || 'Could not send reset link.');
+    status($('#forgotStatus'),'Reset link sent. Check your email.','success');
+  } catch (error) { status($('#forgotStatus'),error.message,'error'); }
+  finally { button.disabled = false; }
+});
+
+$('#newPasswordForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const password = $('#newPassword').value;
+  if (password !== $('#confirmPassword').value) return status($('#newPasswordStatus'),'Passwords do not match.','error');
+  const button = $('#newPasswordButton'); button.disabled = true;
+  status($('#newPasswordStatus'),'Updating password…');
+  try {
+    const response = await fetch('/api/auth/password-update', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ accessToken:recoveryAccessToken, password }) });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(data.error || 'Could not update password.');
+    recoveryAccessToken = '';
+    status($('#newPasswordStatus'),'Password updated. You can sign in now.','success');
+    setTimeout(()=>show('#loginPanel'),900);
+  } catch (error) { status($('#newPasswordStatus'),error.message,'error'); }
+  finally { button.disabled = false; }
+});
+
+async function beginSso(provider) {
+  const buttons = [$('#googleButton'),$('#microsoftButton')]; buttons.forEach((button)=>button.disabled=true);
+  status($('#loginStatus'),'Opening secure sign in…');
+  try {
+    const redirectTo = `${location.origin}/login.html?auth=callback${next !== '/' ? `&next=${encodeURIComponent(next)}` : ''}`;
+    const response = await fetch(`/api/auth/oauth-url?provider=${encodeURIComponent(provider)}&redirectTo=${encodeURIComponent(redirectTo)}`);
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok || !data.url) throw new Error(data.error || 'SSO is not available yet.');
+    location.href = data.url;
+  } catch (error) {
+    status($('#loginStatus'),error.message,'error'); buttons.forEach((button)=>button.disabled=false);
+  }
+}
+$('#googleButton').addEventListener('click',()=>beginSso('google'));
+$('#microsoftButton').addEventListener('click',()=>beginSso('azure'));
+
+handleAuthCallback();
+</script>
+</body>
+</html>
