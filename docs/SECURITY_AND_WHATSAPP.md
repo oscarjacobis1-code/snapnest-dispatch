@@ -9,6 +9,7 @@
 - The customer page prepares a WhatsApp message and opens the configured business number. Opening the link does not create a booking. The customer must tap Send and the base must confirm the ride.
 - Meta webhook verification uses a private token. POST requests require HMAC-SHA256 over the **raw** request body with the Meta app secret. Only messages for the configured phone number ID enter the operator inbox. Status events cannot create bookings.
 - Operators review text and shared locations in Bookings → WhatsApp inbox, use the booking form to confirm location and destination, then submit. Customer text is displayed as text, not HTML.
+- Booking cards offer a WhatsApp update draft for a valid customer phone number. The text reflects the current booking status and assigned vehicle; it does not claim an ETA that has not been calculated. The operator reviews it, opens WhatsApp, and taps Send. Opening a draft does not prove delivery or log a sent message.
 - API JSON responses carry `Cache-Control: no-store`. The PWA service worker excludes `/api/` from caching.
 
 ## Required setup
@@ -32,7 +33,7 @@ Set Meta's webhook callback URL to `https://<your-dispatch-host>/api/whatsapp/we
 | Integrity | Signed Meta webhooks, operator confirmation before dispatch, role checks, validated pickup time | WhatsApp inbox retries are deduplicated best-effort in code. A unique database constraint on tenant/channel/external ID is needed before automated dispatch is introduced. |
 | Availability | Invalid webhook traffic is rejected before database work; bounded body and message sizes | Render free instance sleep and external WhatsApp/Supabase outages still interrupt intake. Keep radio/phone dispatch as an operational fallback, and configure database backups and alerting. |
 
-The webhook currently **records messages for a human operator**. It does not auto-reply, parse arbitrary chat into a confirmed booking, or send trip status updates. Those require a Meta access token, approved messaging setup, durable conversation state and an explicit customer confirmation flow. Do not advertise automated WhatsApp dispatch until those pieces are tested end to end.
+The webhook currently **records messages for a human operator**. The booking cards prepare operator-reviewed status messages, but the operator sends them manually in WhatsApp. The system does not auto-reply, parse arbitrary chat into a confirmed booking, record delivery, or automatically send trip status updates. Those require a Meta access token, approved messaging setup, durable conversation state and an explicit customer confirmation flow. Do not advertise automated WhatsApp dispatch until those pieces are tested end to end.
 
 ## Pilot security checks
 

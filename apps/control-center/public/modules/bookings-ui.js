@@ -1,4 +1,5 @@
 import { ago, dateTime, escapeHtml, statusLabel } from './format.js';
+import { customerUpdate } from './customer-updates.js';
 
 export function bookingBucket(status) {
   if (status === 'scheduled') return 'scheduled';
@@ -12,6 +13,7 @@ function driverName(state, id) {
 }
 
 function etaCopy(booking) {
+  if (booking.offerEtaSeconds == null) return '';
   const seconds = Number(booking.offerEtaSeconds);
   if (!Number.isFinite(seconds) || seconds < 0) return '';
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -39,6 +41,8 @@ function bookingStatusCopy(state, booking) {
 export function bookingCard(state, booking, { compact = false } = {}) {
   const scheduled = booking.scheduledFor ? `<span>${escapeHtml(dateTime(booking.scheduledFor))}</span>` : '';
   const manage = ['completed'].includes(booking.status) ? '' : `<button class="booking-manage text-action" data-manage-booking="${escapeHtml(booking.id)}">Manage</button>`;
+  const update = customerUpdate(booking, state.drivers, state.tenant?.name);
+  const customerAction = update ? `<button type="button" class="booking-manage text-action" data-customer-update="${escapeHtml(booking.id)}" aria-label="Review WhatsApp update for booking ${escapeHtml(booking.id)}">WhatsApp update</button>` : '';
   return `<article class="dispatch-booking ${compact ? 'compact-booking' : ''}" data-booking-id="${escapeHtml(booking.id)}">
     <div class="dispatch-booking-head">
       <div><span class="booking-id">#${escapeHtml(String(booking.id).slice(0, 8).toUpperCase())}</span>${scheduled}</div>
@@ -48,6 +52,7 @@ export function bookingCard(state, booking, { compact = false } = {}) {
     <div class="route-line destination"><i class="route-dot"></i><div><div class="route-label">Destination</div><div class="route-value">${escapeHtml(booking.destination?.label || 'Destination')}</div></div></div>
     <div class="booking-meta"><span>${escapeHtml(booking.passengerName || 'Guest')}</span><span>·</span><span>${Number(booking.passengers || 1)} pax</span><span>·</span><span>${escapeHtml(booking.source || 'dispatch')}</span></div>
     <div class="booking-driver">${escapeHtml(bookingStatusCopy(state, booking))}</div>
+    ${customerAction}
   </article>`;
 }
 

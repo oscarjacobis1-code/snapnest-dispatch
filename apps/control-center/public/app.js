@@ -5,6 +5,7 @@ import { bookingBucket, renderBookings, renderOverviewBookings, renderTrips } fr
 import { idleFor, renderAnalytics, renderDrivers, renderEvents, renderOverviewDrivers, renderStats } from '/modules/fleet-ui.js';
 import { renderCustomers, renderSupport } from '/modules/people-support-ui.js';
 import { parseRequestText } from '/modules/whatsapp-format.js';
+import { customerUpdate } from '/modules/customer-updates.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -14,6 +15,8 @@ let state = null;
 let currentPage = 'overview';
 let bookingFilter = 'open';
 let managedBookingId = null;
+let customerUpdateBookingId = null;
+let reviewedCustomerMessage = null;
 let pinMode = null;
 let pickupPin = null;
 let destinationPin = null;
@@ -416,7 +419,61 @@ $$('.booking-tab').forEach((button) => button.addEventListener('click', () => {
   if (state) renderBookings($('#bookings'), state, bookingFilter);
 }));
 
+function closeCustomerUpdate() {
+  $('#customerUpdateDrawer').classList.remove('open');
+  $('#customerUpdateDrawer').setAttribute('aria-hidden', 'true');
+  customerUpdateBookingId = null;
+  reviewedCustomerMessage = null;
+}
+
+function showCustomerUpdate(bookingId) {
+  const booking = state?.bookings?.find((item) => item.id === bookingId);
+  const draft = customerUpdate(booking, state?.drivers, state?.tenant?.name);
+  if (!draft) return;
+  customerUpdateBookingId = bookingId;
+  reviewedCustomerMessage = draft.message;
+  $('#customerUpdateRecipient').textContent = `${booking.passengerName || 'Customer'} · +${draft.phone}`;
+  $('#customerUpdateMessage').textContent = draft.message;
+  $('#customerUpdateStatus').textContent = '';
+  $('#customerUpdateDrawer').classList.add('open');
+  $('#customerUpdateDrawer').setAttribute('aria-hidden', 'false');
+  $('#sendCustomerUpdate').focus();
+}
+
+$$('[data-close-customer-update]').forEach((button) => button.addEventListener('click', closeCustomerUpdate));
+$('#sendCustomerUpdate').addEventListener('click', async () => {
+  const button = $('#sendCustomerUpdate');
+  // Open during the user gesture so browsers do not block the WhatsApp tab after the state check.
+  const popup = window.open('about:blank', '_blank');
+  if (popup) popup.opener = null;
+  button.disabled = true;
+  try {
+    const latest = await api('/api/state');
+    renderState(latest);
+    const booking = latest.bookings.find((item) => item.id === customerUpdateBookingId);
+    const draft = customerUpdate(booking, latest.drivers, latest.tenant?.name);
+    if (!draft) throw new Error('This booking no longer has a valid WhatsApp contact.');
+    if (draft.message !== reviewedCustomerMessage) {
+      popup?.close();
+      showCustomerUpdate(customerUpdateBookingId);
+      $('#customerUpdateStatus').textContent = 'The trip changed. Review this updated message, then tap again.';
+      return;
+    }
+    if (!popup) throw new Error('Allow pop-ups for this site, then try again.');
+    popup.location.replace(draft.url);
+    closeCustomerUpdate();
+  } catch (error) {
+    popup?.close();
+    $('#customerUpdateStatus').textContent = error.message || 'Could not verify the current trip status.';
+  } finally { button.disabled = false; }
+});
+
 document.addEventListener('click', (event) => {
+  const update = event.target.closest('[data-customer-update]');
+  if (update) {
+    showCustomerUpdate(update.dataset.customerUpdate);
+    return;
+  }
   const manage = event.target.closest('[data-manage-booking]');
   if (manage) openManageDrawer(manage.dataset.manageBooking);
   const resolve = event.target.closest('[data-resolve-ticket]');

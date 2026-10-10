@@ -162,6 +162,18 @@
     </section>
   </div>
 
+  <div id="customerUpdateDrawer" class="booking-drawer" aria-hidden="true">
+    <div class="booking-drawer-backdrop" data-close-customer-update></div>
+    <section class="booking-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="customerUpdateTitle">
+      <div class="drawer-heading"><div><span class="dispatch-kicker">CUSTOMER UPDATE</span><h2 id="customerUpdateTitle">Review WhatsApp message</h2></div><button class="icon-button" type="button" data-close-customer-update aria-label="Close">×</button></div>
+      <p class="muted">Check the details before opening WhatsApp. You must tap Send there.</p>
+      <p id="customerUpdateRecipient" class="customer-update-recipient"></p>
+      <p id="customerUpdateMessage" class="customer-update-preview"></p>
+      <p id="customerUpdateStatus" class="form-status" role="status"></p>
+      <button id="sendCustomerUpdate" class="btn primary full" type="button">Open in WhatsApp</button>
+    </section>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
   <script type="module" src="/app.js"></script>
   <script type="module" src="/whatsapp-inbox.js"></script>

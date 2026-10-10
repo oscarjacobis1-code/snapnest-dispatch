@@ -1,4 +1,4 @@
-const CACHE = 'snapnest-dispatch-shell-v15';
+const CACHE = 'snapnest-dispatch-shell-v16';
 const SHELL = [
   '/',
   '/index.html',
@@ -24,6 +24,7 @@ const SHELL = [
   '/modules/fleet-ui.js',
   '/modules/people-support-ui.js',
   '/modules/whatsapp-format.js',
+  '/modules/customer-updates.js',
   '/customer-whatsapp.js',
   '/customer.html'
 ];

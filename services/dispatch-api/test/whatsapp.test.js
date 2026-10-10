@@ -4,6 +4,8 @@ import { createHmac } from 'node:crypto';
 import { incomingMessages, verifyMetaSignature } from '../src/whatsapp/webhook.js';
 import { buildWhatsAppUrl } from '../../../apps/control-center/public/customer-whatsapp.js';
 import { parseRequestText } from '../../../apps/control-center/public/modules/whatsapp-format.js';
+import { customerUpdate } from '../../../apps/control-center/public/modules/customer-updates.js';
+import { bookingCard } from '../../../apps/control-center/public/modules/bookings-ui.js';
 
 test('Meta signature is checked against the raw body', () => {
   const raw = Buffer.from('{"object":"whatsapp_business_account"}');
@@ -34,4 +36,18 @@ test('customer request opens the configured WhatsApp contact and stays a draft',
   assert.match(url.searchParams.get('text'), /Pickup: Stabroek/);
   assert.equal(parseRequestText(url.searchParams.get('text')).destination, 'Diamond');
   assert.throws(() => buildWhatsAppUrl('javascript:alert(1)', { name: 'Asha', pickup: 'A', destination: 'B', passengers: 1 }), /not configured/);
+});
+
+test('operator update uses the real booking state and assigned vehicle without inventing an ETA', () => {
+  const booking = { id: 'abc12345-6789', passengerPhone: '+592 600 0000', status: 'assigned', pickup: { label: 'Stabroek Market' }, assignedDriverId: 'd1' };
+  const drivers = [{ id: 'd1', name: 'Asha', vehicle: 'HC 1234' }];
+  const update = customerUpdate(booking, drivers, 'Demo Base');
+  assert.equal(new URL(update.url).pathname, '/5926000000');
+  assert.match(update.message, /confirmed/);
+  assert.match(update.message, /HC 1234/);
+  assert.doesNotMatch(update.message, /min|ETA/i);
+  assert.match(bookingCard({ drivers, tenant: { name: 'Demo Base' } }, booking), /data-customer-update/);
+  assert.match(customerUpdate({ ...booking, status: 'unfulfilled' }, drivers).message, /has not found an available driver/);
+  assert.match(customerUpdate({ ...booking, status: 'cancelled' }, drivers).message, /cancelled/);
+  assert.equal(customerUpdate({ ...booking, passengerPhone: 'not-a-number' }, drivers), null);
 });
