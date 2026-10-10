@@ -15,8 +15,8 @@ android {
         applicationId = "com.snapnest.dispatch"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.10.0"
+        versionCode = 13
+        versionName = "0.11.0"
         buildConfigField("String", "DISPATCH_API_URL", "\"${dispatchApiUrl.get().trimEnd('/')}\"")
     }
 
