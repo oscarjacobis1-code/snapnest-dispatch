@@ -4,6 +4,11 @@ import {
   signSupportAttachment,
   uploadSupportAttachment
 } from './support-attachments.js';
+import {
+  endOperatorShift,
+  operatorShiftStatus,
+  startOperatorShift
+} from './operator-shifts.js';
 
 const DRIVER_NO_SHOW_WAIT_MS = 3 * 60_000;
 
@@ -47,6 +52,52 @@ export async function handleOperationsRequest({
     const context = await authContext(req);
     requireRole(context, ['admin', 'dispatcher']);
     json(res, 200, { customers: await store.listCustomers(Number(url.searchParams.get('limit') || 100)) });
+    return true;
+  }
+
+  if (req.method === 'GET' && path === '/api/operator-shift') {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    json(res, 200, await operatorShiftStatus({
+      tenantId: context.membership.tenant_id,
+      userId: context.user.id,
+      handoverLimit: Number(url.searchParams.get('limit') || 8)
+    }));
+    return true;
+  }
+
+  if (req.method === 'POST' && path === '/api/operator-shift/start') {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    json(res, 200, { shift: await startOperatorShift({
+      tenantId: context.membership.tenant_id,
+      userId: context.user.id,
+      role: context.membership.role
+    }) });
+    return true;
+  }
+
+  if (req.method === 'POST' && path === '/api/operator-shift/end') {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    const input = await body(req);
+    const state = await store.publicState();
+    const openSupport = await store.listSupportTickets({ limit: 250 });
+    const snapshot = {
+      availableDrivers: state.drivers.filter((driver) => driver.status === 'available').length,
+      busyDrivers: state.drivers.filter((driver) => driver.status === 'busy').length,
+      waitingBookings: state.bookings.filter((booking) => ['pending','offering','unfulfilled'].includes(booking.status)).length,
+      activeTrips: state.bookings.filter((booking) => ['assigned','arrived','in_progress'].includes(booking.status)).length,
+      scheduledBookings: state.bookings.filter((booking) => booking.status === 'scheduled').length,
+      openSupport: openSupport.filter((ticket) => ticket.status !== 'resolved').length,
+      safetyAlerts: openSupport.filter((ticket) => ticket.category === 'safety' && ticket.status !== 'resolved').length
+    };
+    json(res, 200, { shift: await endOperatorShift({
+      tenantId: context.membership.tenant_id,
+      userId: context.user.id,
+      note: input.note,
+      snapshot
+    }) });
     return true;
   }
 
