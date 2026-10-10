@@ -2,7 +2,7 @@
 
 ## What is ready
 
-- The dispatcher Control Center is the operator web app. The separate Android project is the driver app. Both use server-side tenant membership checks in persistent mode.
+- The dispatcher Control Center is the operator web app. The separate Android project is the driver app. Both use server-side tenant membership checks in persistent mode. The driver-profile RLS policy limits direct Data API reads to the linked driver or an operator in that tenant.
 - Production refuses to start without the Supabase URL and keys, or when dispatch authentication is disabled.
 - Only an admin or dispatcher may create a booking through the API in persistent mode. The local memory demo still supports the simulator for development.
 - Driver state changes, GPS, offer responses and trip actions require the linked driver in persistent mode. Operator manual assignment and cancellation remain separate actions.
