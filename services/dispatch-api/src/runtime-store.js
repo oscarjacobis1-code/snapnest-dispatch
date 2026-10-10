@@ -6,6 +6,7 @@ export function createRuntimeStore(env = process.env) {
   const config = runtimeConfig(env);
   if (config.persistent) return { config, store: createSupabaseStore(config) };
   const demoContext = { user: { id: 'demo', email: 'demo@snapnest.local' }, membership: { role: 'admin' }, driver: null };
+  const shifts = new Map();
 
   async function reserveScheduledBooking({ bookingId, driverId }) {
     const booking = memory.getBooking(bookingId);
@@ -49,6 +50,45 @@ export function createRuntimeStore(env = process.env) {
     return [...reservedActivated, ...memory.activateScheduledBookings(now, leadMinutes)];
   }
 
+  async function setDriverStatus(id, status) {
+    const result = memory.setDriverStatus(id, status);
+    const current = shifts.get(id);
+    if (status === 'offline') {
+      if (current?.active) {
+        current.active = false;
+        current.endedAt = new Date().toISOString();
+      }
+    } else if (!current?.active) {
+      shifts.set(id, { active: true, startedAt: new Date().toISOString(), endedAt: null });
+    }
+    return result;
+  }
+
+  async function driverShiftSummary(driverId) {
+    const shift = shifts.get(driverId);
+    if (!shift) return { active: false, startedAt: null, endedAt: null, durationMinutes: 0, completed: 0, cancelled: 0, noShows: 0, trips: 0 };
+    const startMs = new Date(shift.startedAt).getTime();
+    const endMs = shift.endedAt ? new Date(shift.endedAt).getTime() : Date.now();
+    const rows = memory.state.bookings.filter((booking) => {
+      if (booking.assignedDriverId !== driverId || !booking.assignedAt) return false;
+      const at = new Date(booking.assignedAt).getTime();
+      return at >= startMs && at <= endMs;
+    });
+    const completed = rows.filter((booking) => booking.status === 'completed').length;
+    const cancelled = rows.filter((booking) => booking.status === 'cancelled').length;
+    const noShows = rows.filter((booking) => booking.status === 'no_show').length;
+    return {
+      active: Boolean(shift.active),
+      startedAt: shift.startedAt,
+      endedAt: shift.endedAt,
+      durationMinutes: Math.max(0, Math.round((endMs - startMs) / 60000)),
+      completed,
+      cancelled,
+      noShows,
+      trips: completed + cancelled + noShows
+    };
+  }
+
   return {
     config,
     store: {
@@ -57,7 +97,7 @@ export function createRuntimeStore(env = process.env) {
       getBooking: async (id) => memory.getBooking(id),
       activeOfferForDriver: async (driverId) => memory.publicState().bookings.find((b) => b.currentOfferDriverId === driverId) ?? null,
       setNightMode: async (v) => memory.setNightMode(v),
-      setDriverStatus: async (id, status) => memory.setDriverStatus(id, status),
+      setDriverStatus,
       updateDriverLocation: async (id, location) => memory.updateDriverLocation(id, location),
       createBooking: async (input) => memory.createBooking(input),
       activateScheduledBookings,
@@ -68,6 +108,7 @@ export function createRuntimeStore(env = process.env) {
       requeueBooking: async (input) => memory.requeueBooking(input),
       cancelBooking: async (input) => memory.cancelBooking(input),
       driverHistory: async (id, limit) => memory.driverHistory(id, limit),
+      driverShiftSummary,
       listCustomers: async (limit) => memory.listCustomers(limit),
       createSupportTicket: async (input) => memory.createSupportTicket(input),
       listSupportTickets: async (input) => memory.listSupportTickets(input),
