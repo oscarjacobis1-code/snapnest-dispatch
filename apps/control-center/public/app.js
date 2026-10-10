@@ -3,7 +3,7 @@ import { api, clearSession, membership } from '/session.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
-const escapeHtml = (s='') => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escapeHtml = (s='') => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const member = membership();
 let lastState = null;
 let bookingFilter = 'open';
@@ -51,7 +51,7 @@ function driverName(id) {
 
 function bookingBucket(status) {
   if (['pending', 'offering'].includes(status)) return 'open';
-  if (['assigned', 'in_progress'].includes(status)) return 'active';
+  if (['assigned', 'arrived', 'in_progress'].includes(status)) return 'active';
   return 'done';
 }
 
@@ -117,7 +117,7 @@ function renderStats(state) {
   const available = state.drivers.filter((d) => d.status === 'available').length;
   const busy = state.drivers.filter((d) => d.status === 'busy').length;
   const open = state.bookings.filter((b) => ['pending', 'offering'].includes(b.status)).length;
-  const active = state.bookings.filter((b) => ['assigned', 'in_progress'].includes(b.status)).length;
+  const active = state.bookings.filter((b) => ['assigned', 'arrived', 'in_progress'].includes(b.status)).length;
   $('#stats').innerHTML = [
     ['Available cars', available, 'available', `${state.drivers.length} total drivers`],
     ['Busy cars', busy, 'busy', 'Assigned or on trip'],
@@ -142,7 +142,15 @@ function renderDrivers(state) {
 
 function bookingCard(b) {
   const driver = b.assignedDriverId ? driverName(b.assignedDriverId) : b.currentOfferDriverId ? driverName(b.currentOfferDriverId) : '';
-  const statusCopy = b.status === 'offering' ? `Offer sent to ${driver}` : b.status === 'assigned' ? `${driver} heading to pickup` : b.status === 'in_progress' ? `${driver} on trip` : b.status;
+  const statusCopy = b.status === 'offering'
+    ? `Offer sent to ${driver}`
+    : b.status === 'assigned'
+      ? `${driver} heading to pickup`
+      : b.status === 'arrived'
+        ? `${driver} waiting at pickup${b.arrivedAt ? ` · ${ago(b.arrivedAt)}` : ''}`
+        : b.status === 'in_progress'
+          ? `${driver} on trip`
+          : b.status;
   return `<article class="dispatch-booking">
     <div class="dispatch-booking-head"><span class="booking-id">#${escapeHtml(String(b.id).slice(0, 8).toUpperCase())}</span><span class="badge ${escapeHtml(b.status)}">${escapeHtml(String(b.status).replace('_', ' '))}</span></div>
     <div class="route-line"><i class="route-dot"></i><div><div class="route-label">Pickup</div><div class="route-value">${escapeHtml(b.pickup?.label || 'Pickup')}</div></div></div>
@@ -155,14 +163,14 @@ function bookingCard(b) {
 function renderBookings(state) {
   const filtered = state.bookings
     .filter((b) => bookingBucket(b.status) === bookingFilter)
-    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   $('#bookings').innerHTML = filtered.length
     ? filtered.map(bookingCard).join('')
     : `<div class="empty-state"><strong>No ${bookingFilter} bookings</strong><span>${bookingFilter === 'open' ? 'New phone, WhatsApp and web requests will appear here.' : 'Nothing in this queue right now.'}</span></div>`;
 }
 
 function renderEvents(state) {
-  const events = (state.events || []).slice().reverse().slice(0, 30);
+  const events = (state.events || []).slice(0, 30);
   $('#events').innerHTML = events.map((e) => `<div class="event"><strong>${escapeHtml(String(e.type).replaceAll('_', ' '))}</strong><span class="muted">${new Date(e.at).toLocaleTimeString()}</span> · <span class="mono">${escapeHtml(JSON.stringify(e.payload))}</span></div>`).join('') || '<div class="empty-state"><strong>No recent activity</strong><span>Operational events will appear here.</span></div>';
 }
 
