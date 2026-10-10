@@ -11,13 +11,22 @@ function driverName(state, id) {
   return state?.drivers?.find((driver) => driver.id === id)?.name || 'Driver';
 }
 
+function etaCopy(booking) {
+  const seconds = Number(booking.offerEtaSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  const distance = Number(booking.offerRoadDistanceKm);
+  const road = Number.isFinite(distance) && distance >= 0 ? ` · ${distance.toFixed(1)} km road` : '';
+  return ` · ~${minutes} min to pickup${road}`;
+}
+
 function bookingStatusCopy(state, booking) {
   const driver = booking.assignedDriverId ? driverName(state, booking.assignedDriverId) : booking.currentOfferDriverId ? driverName(state, booking.currentOfferDriverId) : '';
   if (booking.status === 'scheduled') {
     const when = booking.scheduledFor ? dateTime(booking.scheduledFor) : 'Scheduled';
     return booking.reservedDriverId ? `${driverName(state, booking.reservedDriverId)} reserved · ${when}` : `Unassigned · ${when}`;
   }
-  if (booking.status === 'offering') return `Offer sent to ${driver}`;
+  if (booking.status === 'offering') return `Offer sent to ${driver}${etaCopy(booking)}`;
   if (booking.status === 'assigned') return `${driver} heading to pickup`;
   if (booking.status === 'arrived') return `${driver} waiting${booking.arrivedAt ? ` · ${ago(booking.arrivedAt)}` : ''}`;
   if (booking.status === 'in_progress') return `${driver} on trip`;
