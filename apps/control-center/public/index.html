@@ -1,6 +1,155 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SnapNest Dispatch · Control Center</title><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.css"><link rel="stylesheet" href="/styles.css"></head><body><main class="shell">
-<div class="topbar"><div class="brand"><div class="logo">SD</div><div><strong>SnapNest Dispatch</strong><div id="baseName" class="muted">Control Center</div></div></div><div class="row"><div class="ptt-control"><button id="pttButton" class="btn ptt" data-ptt-state="connecting">HOLD TO TALK</button><span id="pttStatus" class="muted">Connecting radio…</span></div><a class="btn secondary" href="/customer.html">Customer simulator</a><a class="btn secondary" href="/driver.html">Driver view</a><a id="adminLink" class="btn secondary" href="/admin.html" style="display:none">Admin</a><button id="nightMode" class="btn secondary">Night automation OFF</button><button id="logout" class="btn secondary">Sign out</button></div></div>
-<section id="stats" class="stats"></section>
-<section class="grid"><div class="card"><h2>Live fleet</h2><div id="map" class="map"></div></div><div class="card"><h2>Bookings</h2><div id="bookings"></div></div></section>
-<section class="grid" style="margin-top:18px"><div class="card"><h2>Drivers</h2><div style="overflow:auto"><table class="table"><thead><tr><th>Driver</th><th>Status</th><th>Queue</th><th>Declines</th><th>Last GPS</th></tr></thead><tbody id="driversBody"></tbody></table></div></div><div class="card"><h2>Activity</h2><div id="events" class="events"></div></div></section>
-</main><script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script><script type="module" src="/app.js"></script><script type="module" src="/ptt-web.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SnapNest Dispatch · Control Center</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="dispatcher-body">
+  <div class="dispatch-shell">
+    <aside class="dispatch-sidebar">
+      <div class="dispatch-brand">
+        <div class="logo dispatch-logo">SN</div>
+        <div>
+          <strong>SnapNest</strong>
+          <span>Dispatch</span>
+        </div>
+      </div>
+
+      <nav class="dispatch-nav" aria-label="Dispatcher navigation">
+        <button class="dispatch-nav-item active" data-section="overview"><span>⌂</span>Overview</button>
+        <button class="dispatch-nav-item" data-section="bookings"><span>▣</span>Bookings</button>
+        <button class="dispatch-nav-item" data-section="drivers"><span>●</span>Drivers</button>
+        <button class="dispatch-nav-item" data-section="activity"><span>≡</span>Activity</button>
+      </nav>
+
+      <div class="dispatch-sidebar-footer">
+        <a id="adminLink" class="dispatch-side-link" href="/admin.html" style="display:none">Admin settings</a>
+        <a class="dispatch-side-link" href="/customer.html">Customer simulator</a>
+        <button id="logout" class="dispatch-side-link danger-link">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="dispatch-main">
+      <header class="dispatch-topbar">
+        <div>
+          <div class="eyebrow">CONTROL CENTER</div>
+          <h1 id="baseName">Live Dispatch</h1>
+        </div>
+        <div class="dispatch-actions">
+          <button id="newBookingButton" class="btn primary">+ New booking</button>
+          <button id="nightMode" class="btn secondary">Night automation OFF</button>
+          <div class="ptt-control dispatch-ptt">
+            <button id="pttButton" class="btn ptt" data-ptt-state="connecting">HOLD TO TALK</button>
+            <span id="pttStatus" class="muted">Connecting radio…</span>
+          </div>
+        </div>
+      </header>
+
+      <section id="stats" class="dispatch-stats" aria-label="Live fleet summary"></section>
+
+      <section class="dispatch-operations" data-panel="overview">
+        <div class="dispatch-map-card">
+          <div class="card-header-row">
+            <div>
+              <span class="eyebrow">LIVE FLEET</span>
+              <h2>Driver map</h2>
+            </div>
+            <div id="mapMode" class="map-mode-hint">Live tracking</div>
+          </div>
+          <div id="map" class="dispatch-map"></div>
+        </div>
+
+        <aside class="dispatch-queue-card">
+          <div class="card-header-row">
+            <div>
+              <span class="eyebrow">QUEUE</span>
+              <h2>Bookings</h2>
+            </div>
+            <div class="booking-tabs" role="tablist">
+              <button class="booking-tab active" data-booking-filter="open">Open</button>
+              <button class="booking-tab" data-booking-filter="active">Active</button>
+              <button class="booking-tab" data-booking-filter="done">Done</button>
+            </div>
+          </div>
+          <div id="bookings" class="dispatch-bookings"></div>
+        </aside>
+      </section>
+
+      <section class="dispatch-lower-grid">
+        <div class="dispatch-panel" data-panel="drivers">
+          <div class="card-header-row">
+            <div>
+              <span class="eyebrow">FLEET</span>
+              <h2>Drivers</h2>
+            </div>
+            <span class="muted">Queue order, availability and GPS freshness</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table dispatch-table">
+              <thead><tr><th>Driver</th><th>Status</th><th>Queue</th><th>Declines</th><th>Last GPS</th></tr></thead>
+              <tbody id="driversBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="dispatch-panel" data-panel="activity">
+          <div class="card-header-row">
+            <div>
+              <span class="eyebrow">SYSTEM</span>
+              <h2>Recent activity</h2>
+            </div>
+          </div>
+          <div id="events" class="events dispatch-events"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="bookingDrawer" class="booking-drawer" aria-hidden="true">
+    <div class="booking-drawer-backdrop" data-close-booking></div>
+    <section class="booking-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="bookingDrawerTitle">
+      <div class="drawer-heading">
+        <div>
+          <span class="eyebrow">PHONE / WALK-IN BOOKING</span>
+          <h2 id="bookingDrawerTitle">Create booking</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-booking aria-label="Close">×</button>
+      </div>
+
+      <form id="bookingForm">
+        <div class="form-grid two">
+          <div class="field"><label for="passengerName">Passenger</label><input id="passengerName" name="passengerName" placeholder="Name"></div>
+          <div class="field"><label for="passengerPhone">Phone</label><input id="passengerPhone" name="passengerPhone" placeholder="592 ..."></div>
+        </div>
+        <div class="form-grid two">
+          <div class="field"><label for="passengers">Passengers</label><input id="passengers" name="passengers" type="number" min="1" max="8" value="1"></div>
+          <div class="field"><label for="bookingSource">Source</label><input id="bookingSource" value="Dispatcher" disabled></div>
+        </div>
+
+        <div class="field location-field">
+          <label for="pickupLabel">Pickup</label>
+          <input id="pickupLabel" name="pickupLabel" placeholder="e.g. Giftland Mall" required>
+          <div class="pin-row"><button id="pinPickup" class="btn secondary compact" type="button">Pin pickup on map</button><span id="pickupPinStatus" class="muted">No map pin yet</span></div>
+        </div>
+
+        <div class="field location-field">
+          <label for="destinationLabel">Destination</label>
+          <input id="destinationLabel" name="destinationLabel" placeholder="e.g. Camp Street" required>
+          <div class="pin-row"><button id="pinDestination" class="btn secondary compact" type="button">Pin destination on map</button><span id="destinationPinStatus" class="muted">Optional</span></div>
+        </div>
+
+        <div class="field"><label for="bookingNotes">Notes</label><textarea id="bookingNotes" name="notes" placeholder="Gate, landmark, special instructions"></textarea></div>
+        <div id="bookingFormStatus" class="form-status"></div>
+        <button id="createBooking" class="btn primary full" type="submit">Create & dispatch</button>
+      </form>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
+  <script type="module" src="/app.js"></script>
+  <script type="module" src="/ptt-web.js"></script>
+</body>
+</html>
