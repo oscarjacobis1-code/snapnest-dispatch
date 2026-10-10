@@ -26,6 +26,7 @@
                 <data android:scheme="snapnestdispatch" android:host="auth" android:pathPrefix="/callback" />
             </intent-filter>
         </activity>
+        <activity android:name=".UpcomingActivity" android:exported="false" />
         <service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".DriverLocationService" android:exported="false" android:foregroundServiceType="location" />
         <receiver android:name=".JobActionReceiver" android:exported="false" />
