@@ -21,6 +21,14 @@ export async function handleOperationsRequest({
     return true;
   }
 
+  const shiftMatch = path.match(/^\/api\/drivers\/([^/]+)\/shift$/);
+  if (req.method === 'GET' && shiftMatch) {
+    const context = await authContext(req);
+    requireDriverAccess(context, shiftMatch[1]);
+    json(res, 200, { shift: await store.driverShiftSummary(shiftMatch[1]) });
+    return true;
+  }
+
   if (req.method === 'GET' && path === '/api/drivers/available') {
     const context = await authContext(req);
     requireRole(context, ['admin', 'dispatcher']);
