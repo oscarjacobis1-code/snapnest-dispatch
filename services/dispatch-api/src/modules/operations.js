@@ -78,7 +78,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
         tenant_id: `eq.${t.id}`,
         status: 'eq.scheduled',
         scheduled_for: `lte.${threshold}`,
-        select: 'id',
+        select: 'id,reserved_driver_id',
         order: 'scheduled_for.asc',
         limit: 25
       }
@@ -92,10 +92,79 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
         prefer: 'return=representation'
       });
       if (!updated?.length) continue;
-      await emit('booking.scheduled_ready', { bookingId: row.id });
+      await emit('booking.scheduled_ready', { bookingId: row.id, reservedDriverId: row.reserved_driver_id || null });
+
+      if (row.reserved_driver_id) {
+        const reserved = (await driverRows()).find((driver) => driver.id === row.reserved_driver_id);
+        if (reserved?.status === 'available') {
+          await db.rpc('assign_booking_driver', {
+            p_tenant_id: t.id,
+            p_booking_id: row.id,
+            p_driver_id: row.reserved_driver_id
+          });
+          await emit('booking.reservation_assigned', { bookingId: row.id, driverId: row.reserved_driver_id });
+          activated.push(await bookingById(row.id));
+          continue;
+        }
+        await emit('booking.reservation_unavailable', { bookingId: row.id, driverId: row.reserved_driver_id });
+      }
+
       activated.push(await offerNextDriver(await bookingById(row.id)));
     }
     return activated;
+  }
+
+  async function reserveScheduledBooking({ bookingId, driverId }) {
+    const t = await tenant();
+    await db.rpc('reserve_scheduled_booking', {
+      p_tenant_id: t.id,
+      p_booking_id: bookingId,
+      p_driver_id: driverId
+    });
+    await emit('booking.reserved', { bookingId, driverId });
+    return bookingById(bookingId);
+  }
+
+  async function clearScheduledReservation({ bookingId }) {
+    const t = await tenant();
+    const before = await bookingById(bookingId);
+    await db.rpc('clear_scheduled_reservation', {
+      p_tenant_id: t.id,
+      p_booking_id: bookingId
+    });
+    await emit('booking.reservation_cleared', { bookingId, driverId: before.reservedDriverId || null });
+    return bookingById(bookingId);
+  }
+
+  async function driverUpcoming(driverId, limit = 20) {
+    const t = await tenant();
+    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 20));
+    const rows = await db.request('bookings', {
+      query: {
+        tenant_id: `eq.${t.id}`,
+        reserved_driver_id: `eq.${driverId}`,
+        status: 'eq.scheduled',
+        scheduled_for: `gt.${new Date().toISOString()}`,
+        select: '*',
+        order: 'scheduled_for.asc',
+        limit: safeLimit
+      }
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      passengerName: row.customer_name || 'Guest',
+      passengerPhone: row.customer_phone_e164 || '',
+      passengers: Number(row.passengers || 1),
+      notes: row.notes || '',
+      pickup: { label: row.pickup_label, lat: Number(row.pickup_lat), lng: Number(row.pickup_lng) },
+      destination: {
+        label: row.destination_label,
+        lat: row.destination_lat == null ? null : Number(row.destination_lat),
+        lng: row.destination_lng == null ? null : Number(row.destination_lng)
+      },
+      scheduledFor: row.scheduled_for,
+      status: row.status
+    }));
   }
 
   async function assignBooking({ bookingId, driverId }) {
@@ -187,7 +256,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
       prefer: 'return=representation'
     });
     const ticket = first(rows);
-    await emit('support.created', { ticketId: ticket?.id, driverId: driverId || null, priority: ticket?.priority || priority || 'normal' });
+    await emit('support.created', { ticketId: ticket?.id, driverId: driverId || null, priority: ticket?.priority || priority || 'normal', category: ticket?.category || category || 'app' });
     return ticket;
   }
 
@@ -224,6 +293,9 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
   return {
     createBooking,
     activateScheduledBookings,
+    reserveScheduledBooking,
+    clearScheduledReservation,
+    driverUpcoming,
     assignBooking,
     requeueBooking,
     cancelBooking,
