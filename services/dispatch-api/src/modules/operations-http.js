@@ -12,6 +12,15 @@ export async function handleOperationsRequest({
     return true;
   }
 
+  const upcomingMatch = path.match(/^\/api\/drivers\/([^/]+)\/upcoming$/);
+  if (req.method === 'GET' && upcomingMatch) {
+    const context = await authContext(req);
+    requireDriverAccess(context, upcomingMatch[1]);
+    const limit = Number(url.searchParams.get('limit') || 20);
+    json(res, 200, { bookings: await store.driverUpcoming(upcomingMatch[1], limit) });
+    return true;
+  }
+
   if (req.method === 'GET' && path === '/api/drivers/available') {
     const context = await authContext(req);
     requireRole(context, ['admin', 'dispatcher']);
@@ -60,6 +69,24 @@ export async function handleOperationsRequest({
     requireRole(context, ['admin', 'dispatcher']);
     const input = await body(req);
     json(res, 200, await store.resolveSupportTicket({ ticketId: resolveTicketMatch[1], resolutionNote: input.resolutionNote }));
+    return true;
+  }
+
+  const reserveMatch = path.match(/^\/api\/bookings\/([^/]+)\/reserve$/);
+  if (req.method === 'POST' && reserveMatch) {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    const input = await body(req);
+    if (!input.driverId) throw new HttpError(400, 'Driver is required.');
+    json(res, 200, await store.reserveScheduledBooking({ bookingId: reserveMatch[1], driverId: String(input.driverId) }));
+    return true;
+  }
+
+  const clearReservationMatch = path.match(/^\/api\/bookings\/([^/]+)\/clear-reservation$/);
+  if (req.method === 'POST' && clearReservationMatch) {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    json(res, 200, await store.clearScheduledReservation({ bookingId: clearReservationMatch[1] }));
     return true;
   }
 
