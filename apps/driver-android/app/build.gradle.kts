@@ -15,8 +15,8 @@ android {
         applicationId = "com.snapnest.dispatch"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.9.0"
+        versionCode = 12
+        versionName = "0.10.0"
         buildConfigField("String", "DISPATCH_API_URL", "\"${dispatchApiUrl.get().trimEnd('/')}\"")
     }
 
@@ -42,6 +42,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("io.livekit:livekit-android:2.29.0")
