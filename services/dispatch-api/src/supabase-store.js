@@ -297,6 +297,7 @@ export function createSupabaseStore(config) {
     setDriverStatus,
     updateDriverLocation,
     createBooking: operations.createBooking,
+    rescheduleBooking: operations.rescheduleBooking,
     activateScheduledBookings: operations.activateScheduledBookings,
     reserveScheduledBooking: operations.reserveScheduledBooking,
     clearScheduledReservation: operations.clearScheduledReservation,

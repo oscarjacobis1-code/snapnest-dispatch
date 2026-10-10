@@ -173,6 +173,15 @@ export async function handleOperationsRequest({
     return true;
   }
 
+  const rescheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/reschedule$/);
+  if (req.method === 'POST' && rescheduleMatch) {
+    const context = await authContext(req);
+    requireRole(context, ['admin', 'dispatcher']);
+    const input = await body(req);
+    json(res, 200, await store.rescheduleBooking({ bookingId: rescheduleMatch[1], scheduledFor: input.scheduledFor }));
+    return true;
+  }
+
   const reserveMatch = path.match(/^\/api\/bookings\/([^/]+)\/reserve$/);
   if (req.method === 'POST' && reserveMatch) {
     const context = await authContext(req);

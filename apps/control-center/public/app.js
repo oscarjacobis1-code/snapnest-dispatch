@@ -193,9 +193,12 @@ function populateManageDrawer() {
   if (!booking) return;
   const assigned = state.drivers.find((driver) => driver.id === booking.assignedDriverId);
   $('#manageTitle').textContent = `#${String(booking.id).slice(0, 8).toUpperCase()}`;
-  $('#manageSummary').innerHTML = `<div class="manage-route"><span>Pickup</span><strong>${escapeHtml(booking.pickup?.label || 'Pickup')}</strong></div>
+  const summary = $('#manageSummary');
+  const reservationPanel = summary.querySelector('.reservation-panel');
+  summary.innerHTML = `<div class="manage-route"><span>Pickup</span><strong>${escapeHtml(booking.pickup?.label || 'Pickup')}</strong></div>
     <div class="manage-route destination"><span>Destination</span><strong>${escapeHtml(booking.destination?.label || 'Destination')}</strong></div>
     <div class="manage-meta"><span>${escapeHtml(booking.passengerName || 'Guest')}</span><span>${escapeHtml(booking.status)}</span>${booking.scheduledFor ? `<span>${escapeHtml(dateTime(booking.scheduledFor))}</span>` : ''}${assigned ? `<span>${escapeHtml(assigned.name)}</span>` : ''}</div>`;
+  if (reservationPanel && booking.status === 'scheduled') summary.appendChild(reservationPanel);
 
   const eligible = state.drivers.filter((driver) => driver.status === 'available' || driver.id === booking.assignedDriverId);
   $('#manageDriver').innerHTML = `<option value="">Choose available driver</option>${eligible.map((driver) => `<option value="${escapeHtml(driver.id)}" ${driver.id === booking.assignedDriverId ? 'selected' : ''}>${escapeHtml(driver.name)} · ${escapeHtml(driver.vehicle || 'No vehicle')} ${idleFor(driver) ? `· ${escapeHtml(idleFor(driver))}` : ''}</option>`).join('')}`;

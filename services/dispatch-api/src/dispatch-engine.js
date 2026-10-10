@@ -50,10 +50,11 @@ export function chooseNextDriver({ drivers, booking, attemptedDriverIds = [] }) 
   return rankDrivers({ drivers, pickup: booking.pickup }).find((d) => !attempted.has(d.id)) ?? null;
 }
 
-function parseScheduledFor(value) {
+export function parseScheduledFor(value, now = Date.now()) {
   if (value === undefined || value === null || value === '') return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) throw new Error('Scheduled pickup time is invalid.');
+  if (date.getTime() <= now + 60_000) throw new Error('Scheduled pickup must be more than one minute in the future.');
   return date.toISOString();
 }
 
