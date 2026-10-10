@@ -20,7 +20,7 @@ function ensureMeta(name, content) {
   meta.content = content;
 }
 
-ensureLink('manifest', '/manifest.webmanifest');
+ensureLink('manifest', '/manifest.json');
 ensureLink('stylesheet', '/tablet.css', { 'data-dispatch-tablet': 'true' });
 ensureMeta('theme-color', '#0d2a40');
 ensureMeta('mobile-web-app-capable', 'yes');
