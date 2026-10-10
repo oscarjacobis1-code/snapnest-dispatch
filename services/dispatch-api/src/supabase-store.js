@@ -1,5 +1,6 @@
 import { BOOKING_STATUS, DRIVER_STATUS, chooseNextDriver } from './dispatch-engine.js';
 import { SupabaseRest } from './supabase-rest.js';
+import { createOperationsModule } from './modules/operations.js';
 
 const first = (value) => Array.isArray(value) ? value[0] : value;
 const ms = (value) => value ? new Date(value).getTime() : null;
@@ -67,10 +68,17 @@ export function createSupabaseStore(config) {
       destination: { label: row.destination_label, lat: row.destination_lat == null ? null : Number(row.destination_lat), lng: row.destination_lng == null ? null : Number(row.destination_lng) },
       status: row.status,
       createdAt: row.created_at,
+      scheduledFor: row.scheduled_for,
       assignedAt: row.assigned_at,
       arrivedAt: row.arrived_at,
       startedAt: row.started_at,
       completedAt: row.completed_at,
+      cancelledAt: row.cancelled_at,
+      cancellationReason: row.cancellation_reason,
+      cancellationCode: row.cancellation_code,
+      cancelledByRole: row.cancelled_by_role,
+      noShowAt: row.no_show_at,
+      reassignCount: Number(row.reassign_count || 0),
       assignedDriverId: row.assigned_driver_id,
       currentOfferDriverId: activeOffer?.driver_id ?? null,
       offerExpiresAt: activeOffer?.expires_at ? new Date(activeOffer.expires_at).getTime() : null
@@ -109,9 +117,9 @@ export function createSupabaseStore(config) {
     const t = await tenant();
     const [drivers, bookingRows, offerRows, events] = await Promise.all([
       driverRows(),
-      db.request('bookings', { query: { tenant_id: `eq.${t.id}`, select: '*', order: 'created_at.desc', limit: 100 } }),
+      db.request('bookings', { query: { tenant_id: `eq.${t.id}`, select: '*', order: 'created_at.desc', limit: 150 } }),
       db.request('dispatch_offers', { query: { tenant_id: `eq.${t.id}`, response: 'is.null', select: 'booking_id,driver_id,expires_at,offered_at', order: 'offered_at.desc' } }),
-      db.request('dispatch_events', { query: { tenant_id: `eq.${t.id}`, select: 'id,event_type,payload,created_at', order: 'created_at.desc', limit: 25 } })
+      db.request('dispatch_events', { query: { tenant_id: `eq.${t.id}`, select: 'id,event_type,payload,created_at', order: 'created_at.desc', limit: 40 } })
     ]);
     const offerByBooking = new Map();
     for (const offer of offerRows) if (!offerByBooking.has(offer.booking_id)) offerByBooking.set(offer.booking_id, offer);
@@ -166,24 +174,6 @@ export function createSupabaseStore(config) {
     await db.rpc('create_dispatch_offer', { p_tenant_id: t.id, p_booking_id: booking.id, p_driver_id: next.id, p_score: next.dispatchScore, p_distance_km: next.distanceKm, p_expires_at: expiresAt });
     await emit('booking.offered', { bookingId: booking.id, driverId: next.id, distanceKm: next.distanceKm, score: next.dispatchScore });
     return bookingById(booking.id);
-  }
-
-  async function createBooking(input) {
-    const t = await tenant();
-    const rows = await db.request('bookings', {
-      method: 'POST',
-      body: {
-        tenant_id: t.id, source: input.source ?? 'web', customer_name: input.passengerName,
-        customer_phone_e164: input.passengerPhone || null, passengers: input.passengers, notes: input.notes || null,
-        pickup_label: input.pickup.label, pickup_lat: input.pickup.lat, pickup_lng: input.pickup.lng,
-        destination_label: input.destination.label, destination_lat: input.destination.lat, destination_lng: input.destination.lng,
-        status: BOOKING_STATUS.PENDING
-      },
-      prefer: 'return=representation'
-    });
-    const booking = mapBooking(first(rows));
-    await emit('booking.created', { bookingId: booking.id, source: booking.source });
-    return offerNextDriver(booking);
   }
 
   async function respondToOffer({ bookingId, driverId, accept }) {
@@ -247,9 +237,35 @@ export function createSupabaseStore(config) {
     return { accessToken: session.access_token, refreshToken: session.refresh_token, expiresIn: session.expires_in, ...context };
   }
 
+  const operations = createOperationsModule({ db, tenant, driverRows, bookingById, offerNextDriver, emit });
+
   return {
-    mode: 'supabase', publicState, activeOfferForDriver, setNightMode, setDriverStatus, updateDriverLocation,
-    createBooking, respondToOffer, arriveTrip, startTrip, completeTrip, expireOffers, sessionContext, login, refresh,
+    mode: 'supabase',
+    publicState,
+    getBooking: bookingById,
+    activeOfferForDriver,
+    setNightMode,
+    setDriverStatus,
+    updateDriverLocation,
+    createBooking: operations.createBooking,
+    activateScheduledBookings: operations.activateScheduledBookings,
+    assignBooking: operations.assignBooking,
+    requeueBooking: operations.requeueBooking,
+    cancelBooking: operations.cancelBooking,
+    driverHistory: operations.driverHistory,
+    listCustomers: operations.listCustomers,
+    createSupportTicket: operations.createSupportTicket,
+    listSupportTickets: operations.listSupportTickets,
+    resolveSupportTicket: operations.resolveSupportTicket,
+    availableDrivers: operations.availableDrivers,
+    respondToOffer,
+    arriveTrip,
+    startTrip,
+    completeTrip,
+    expireOffers,
+    sessionContext,
+    login,
+    refresh,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
   };
 }
