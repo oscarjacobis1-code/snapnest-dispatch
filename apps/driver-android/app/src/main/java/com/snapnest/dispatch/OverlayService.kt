@@ -209,6 +209,7 @@ class OverlayService : Service() {
         panel.addView(menuItem("●  Go Unavailable", AMBER) { changeDriverStatus("unavailable") })
         panel.addView(menuItem("Upcoming Jobs", ORANGE) { openUpcoming() })
         panel.addView(menuItem("Shift Summary", Color.WHITE) { openShift() })
+        panel.addView(menuItem("Report Issue", ORANGE) { openSupport() })
         panel.addView(menuItem("Current Trip", Color.WHITE) { openApp() })
         panel.addView(menuItem("Open App", Color.WHITE) { openApp() })
         panel.addView(menuItem("Settings", MUTED) {
@@ -219,7 +220,7 @@ class OverlayService : Service() {
         panel.addView(menuItem("End Shift", RED) { changeDriverStatus("offline") })
 
         val menuWidth = dp(190)
-        val estimatedHeight = dp(392)
+        val estimatedHeight = dp(438)
         val yBelow = params.y + params.height + dp(8)
         val displayHeight = resources.displayMetrics.heightPixels
         val y = if (yBelow + estimatedHeight < displayHeight) yBelow else (params.y - estimatedHeight).coerceAtLeast(dp(12))
@@ -279,6 +280,11 @@ class OverlayService : Service() {
     private fun openShift() {
         closeMenu()
         startActivity(Intent(this, ShiftActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun openSupport() {
+        closeMenu()
+        startActivity(Intent(this, SupportReportActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun openApp() {
