@@ -10,6 +10,7 @@ export const BOOKING_STATUS = Object.freeze({
   PENDING: 'pending',
   OFFERING: 'offering',
   ASSIGNED: 'assigned',
+  ARRIVED: 'arrived',
   IN_PROGRESS: 'in_progress',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
