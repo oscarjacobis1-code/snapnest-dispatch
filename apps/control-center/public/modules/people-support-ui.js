@@ -1,4 +1,5 @@
 import { ago, escapeHtml, statusLabel } from './format.js';
+import { api } from '/session.js';
 
 export function renderCustomers(container, customers = []) {
   if (!container) return;
@@ -18,8 +19,16 @@ export function renderSupport(container, tickets = []) {
   });
   container.innerHTML = sorted.length ? sorted.map((ticket) => `<article class="support-row ${ticket.category === 'safety' && ticket.status !== 'resolved' ? 'safety-ticket' : ''}">
     <div class="support-priority ${escapeHtml(ticket.priority)}"></div>
-    <div class="support-main"><div><strong>${escapeHtml(ticket.subject || 'Issue')}</strong><span class="badge ${escapeHtml(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span></div><span>${escapeHtml(ticket.category || 'app')} · ${escapeHtml(ago(ticket.created_at || ticket.createdAt))}</span></div>
-    <div class="support-actions">${ticket.status !== 'resolved' ? `<button class="text-action" data-resolve-ticket="${escapeHtml(ticket.id)}">Resolve</button>` : '<span class="muted">Resolved</span>'}</div>
+    <div class="support-main">
+      <div><strong>${escapeHtml(ticket.subject || 'Issue')}</strong><span class="badge ${escapeHtml(ticket.status)}">${escapeHtml(statusLabel(ticket.status))}</span></div>
+      <span>${escapeHtml(ticket.category || 'app')} · ${escapeHtml(ago(ticket.created_at || ticket.createdAt))}</span>
+      ${ticket.description ? `<p class="support-description">${escapeHtml(ticket.description)}</p>` : ''}
+      ${ticket.booking_id ? `<small class="support-reference">Booking ${escapeHtml(String(ticket.booking_id).slice(0,8).toUpperCase())}</small>` : ''}
+    </div>
+    <div class="support-actions">
+      ${ticket.attachment_url ? `<button class="text-action" data-support-attachment="${escapeHtml(ticket.id)}">View screenshot</button>` : ''}
+      ${ticket.status !== 'resolved' ? `<button class="text-action" data-resolve-ticket="${escapeHtml(ticket.id)}">Resolve</button>` : '<span class="muted">Resolved</span>'}
+    </div>
   </article>`).join('') : '<div class="empty-state"><strong>No support tickets</strong><span>Driver-reported issues will appear here.</span></div>';
 }
 
@@ -39,3 +48,28 @@ export function renderSafetyBanner(container, tickets = []) {
     <span class="safety-banner-action">Open safety</span>
   </button>`;
 }
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-support-attachment]');
+  if (!button) return;
+  const ticketId = button.dataset.supportAttachment;
+  if (!ticketId || button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Opening…';
+  const popup = window.open('about:blank', '_blank');
+  if (popup) popup.opener = null;
+  try {
+    const result = await api(`/api/support/${encodeURIComponent(ticketId)}/attachment`);
+    if (popup) popup.location.replace(result.url);
+    else window.open(result.url, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    if (popup) popup.close();
+    console.error('Could not open support screenshot', error);
+    button.textContent = 'Could not open';
+    setTimeout(() => { button.textContent = original; }, 1800);
+  } finally {
+    button.disabled = false;
+    if (button.textContent === 'Opening…') button.textContent = original;
+  }
+});
