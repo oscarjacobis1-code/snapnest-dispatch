@@ -36,6 +36,26 @@ object DriverApi {
         val destinationLng: Double? = null
     )
 
+    data class TripHistoryItem(
+        val bookingId: String,
+        val pickup: String,
+        val destination: String,
+        val passengerName: String,
+        val status: String,
+        val createdAt: String,
+        val completedAt: String,
+        val cancellationReason: String
+    )
+
+    data class SupportTicket(
+        val id: String,
+        val category: String,
+        val priority: String,
+        val subject: String,
+        val status: String,
+        val createdAt: String
+    )
+
     data class DriverSnapshot(
         val driverName: String,
         val vehicle: String,
@@ -126,7 +146,6 @@ object DriverApi {
         } catch (error: ApiException) {
             if (error.status != 401) throw error
         }
-
         val refreshed = try {
             refresh(initial)
         } catch (error: Exception) {
@@ -146,9 +165,7 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/location", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use {
-                it.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString())
-            }
+            conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("lat", lat).put("lng", lng).put("accuracyM", accuracyM.toDouble()).toString()) }
             readJson(conn)
         }
     }
@@ -211,33 +228,21 @@ object DriverApi {
         val conn = connection("${session.baseUrl}/api/state", "GET", session.accessToken)
         val json = readJson(conn)
         val drivers = json.optJSONArray("drivers") ?: JSONArray()
-
         var driver: JSONObject? = null
         for (i in 0 until drivers.length()) {
             val candidate = drivers.optJSONObject(i) ?: continue
-            if (candidate.optString("id") == session.driverId) {
-                driver = candidate
-                break
-            }
+            if (candidate.optString("id") == session.driverId) { driver = candidate; break }
         }
-
         val bookings = json.optJSONArray("bookings") ?: JSONArray()
         var offer: ActiveOffer? = null
         var trip: ActiveTrip? = null
         for (i in 0 until bookings.length()) {
             val booking = bookings.optJSONObject(i) ?: continue
             when (booking.optString("status")) {
-                "offering" -> {
-                    val offeredTo = booking.optString("currentOfferDriverId")
-                    if (offer == null && offeredTo == session.driverId) offer = parseOffer(booking)
-                }
-                "assigned", "arrived", "in_progress" -> {
-                    val assignedTo = booking.optString("assignedDriverId")
-                    if (trip == null && assignedTo == session.driverId) trip = parseTrip(booking)
-                }
+                "offering" -> if (offer == null && booking.optString("currentOfferDriverId") == session.driverId) offer = parseOffer(booking)
+                "assigned", "arrived", "in_progress" -> if (trip == null && booking.optString("assignedDriverId") == session.driverId) trip = parseTrip(booking)
             }
         }
-
         DriverSnapshot(
             driverName = driver?.optString("name").orEmpty().ifBlank { session.driverName.ifBlank { "Driver" } },
             vehicle = driver?.optString("vehicle").orEmpty().ifBlank { session.vehicle },
@@ -251,9 +256,7 @@ object DriverApi {
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/bookings/$bookingId/offer-response", "POST", session.accessToken)
             conn.doOutput = true
-            conn.outputStream.bufferedWriter().use {
-                it.write(JSONObject().put("driverId", session.driverId).put("accept", accept).toString())
-            }
+            conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("driverId", session.driverId).put("accept", accept).toString()) }
             readJson(conn)
         }
     }
@@ -265,6 +268,65 @@ object DriverApi {
             conn.doOutput = true
             conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("driverId", session.driverId).toString()) }
             readJson(conn)
+        }
+    }
+
+    fun cancelTrip(store: SessionStore, bookingId: String, reason: String, code: String = "other", noShow: Boolean = false) {
+        withRefresh(store) { session ->
+            val action = if (noShow) "no-show" else "cancel"
+            val conn = connection("${session.baseUrl}/api/bookings/$bookingId/$action", "POST", session.accessToken)
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { it.write(JSONObject().put("reason", reason).put("code", code).toString()) }
+            readJson(conn)
+        }
+    }
+
+    fun tripHistory(store: SessionStore, limit: Int = 30): List<TripHistoryItem> = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/drivers/${session.driverId}/history?limit=${limit.coerceIn(1, 100)}", "GET", session.accessToken)
+        val trips = readJson(conn).optJSONArray("trips") ?: JSONArray()
+        buildList {
+            for (i in 0 until trips.length()) {
+                val item = trips.optJSONObject(i) ?: continue
+                add(TripHistoryItem(
+                    bookingId = item.optString("id"),
+                    pickup = item.optJSONObject("pickup")?.optString("label").orEmpty(),
+                    destination = item.optJSONObject("destination")?.optString("label").orEmpty(),
+                    passengerName = item.optString("passengerName", "Guest"),
+                    status = item.optString("status"),
+                    createdAt = item.optString("createdAt"),
+                    completedAt = item.optString("completedAt"),
+                    cancellationReason = item.optString("cancellationReason")
+                ))
+            }
+        }
+    }
+
+    fun createSupportTicket(store: SessionStore, subject: String, description: String, category: String = "app", priority: String = "normal", bookingId: String? = null) {
+        withRefresh(store) { session ->
+            val conn = connection("${session.baseUrl}/api/support", "POST", session.accessToken)
+            conn.doOutput = true
+            val payload = JSONObject().put("subject", subject).put("description", description).put("category", category).put("priority", priority)
+            if (!bookingId.isNullOrBlank()) payload.put("bookingId", bookingId)
+            conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+            readJson(conn)
+        }
+    }
+
+    fun supportTickets(store: SessionStore, limit: Int = 50): List<SupportTicket> = withRefresh(store) { session ->
+        val conn = connection("${session.baseUrl}/api/support?limit=${limit.coerceIn(1, 100)}", "GET", session.accessToken)
+        val tickets = readJson(conn).optJSONArray("tickets") ?: JSONArray()
+        buildList {
+            for (i in 0 until tickets.length()) {
+                val item = tickets.optJSONObject(i) ?: continue
+                add(SupportTicket(
+                    id = item.optString("id"),
+                    category = item.optString("category"),
+                    priority = item.optString("priority"),
+                    subject = item.optString("subject"),
+                    status = item.optString("status"),
+                    createdAt = item.optString("created_at", item.optString("createdAt"))
+                ))
+            }
         }
     }
 
@@ -281,9 +343,7 @@ object DriverApi {
     }
 
     fun acquirePttFloor(store: SessionStore): PttLease = pttFloorRequest(store, "acquire", null)
-
-    fun heartbeatPttFloor(store: SessionStore, leaseToken: String): PttLease =
-        pttFloorRequest(store, "heartbeat", leaseToken)
+    fun heartbeatPttFloor(store: SessionStore, leaseToken: String): PttLease = pttFloorRequest(store, "heartbeat", leaseToken)
 
     fun releasePttFloor(store: SessionStore, leaseToken: String): Boolean = withRefresh(store) { session ->
         val conn = connection("${session.baseUrl}/api/ptt/floor/release", "POST", session.accessToken)
@@ -295,14 +355,8 @@ object DriverApi {
     private fun pttFloorRequest(store: SessionStore, action: String, leaseToken: String?): PttLease = withRefresh(store) { session ->
         val conn = connection("${session.baseUrl}/api/ptt/floor/$action", "POST", session.accessToken)
         conn.doOutput = true
-        conn.outputStream.bufferedWriter().use {
-            it.write(if (leaseToken == null) "{}" else JSONObject().put("leaseToken", leaseToken).toString())
-        }
+        conn.outputStream.bufferedWriter().use { it.write(if (leaseToken == null) "{}" else JSONObject().put("leaseToken", leaseToken).toString()) }
         val json = readJson(conn)
-        PttLease(
-            granted = json.optBoolean("granted", false),
-            leaseToken = json.optString("leaseToken", ""),
-            expiresAt = json.optLong("expiresAt", 0L)
-        )
+        PttLease(json.optBoolean("granted", false), json.optString("leaseToken", ""), json.optLong("expiresAt", 0L))
     }
 }
