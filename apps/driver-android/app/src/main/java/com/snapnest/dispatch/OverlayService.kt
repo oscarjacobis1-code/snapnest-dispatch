@@ -207,6 +207,7 @@ class OverlayService : Service() {
         panel.addView(menuTitle("QUICK ACTIONS"))
         panel.addView(menuItem("●  Go Available", GREEN) { changeDriverStatus("available") })
         panel.addView(menuItem("●  Go Unavailable", AMBER) { changeDriverStatus("unavailable") })
+        panel.addView(menuItem("Upcoming Jobs", ORANGE) { openUpcoming() })
         panel.addView(menuItem("Current Trip", Color.WHITE) { openApp() })
         panel.addView(menuItem("Open App", Color.WHITE) { openApp() })
         panel.addView(menuItem("Settings", MUTED) {
@@ -217,9 +218,10 @@ class OverlayService : Service() {
         panel.addView(menuItem("End Shift", RED) { changeDriverStatus("offline") })
 
         val menuWidth = dp(190)
+        val estimatedHeight = dp(350)
         val yBelow = params.y + params.height + dp(8)
         val displayHeight = resources.displayMetrics.heightPixels
-        val y = if (yBelow + dp(310) < displayHeight) yBelow else (params.y - dp(310)).coerceAtLeast(dp(12))
+        val y = if (yBelow + estimatedHeight < displayHeight) yBelow else (params.y - estimatedHeight).coerceAtLeast(dp(12))
         val x = params.x.coerceIn(dp(8), (resources.displayMetrics.widthPixels - menuWidth - dp(8)).coerceAtLeast(dp(8)))
         val lp = WindowManager.LayoutParams(
             menuWidth,
@@ -266,6 +268,11 @@ class OverlayService : Service() {
                     }
                 }
         }.start()
+    }
+
+    private fun openUpcoming() {
+        closeMenu()
+        startActivity(Intent(this, UpcomingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun openApp() {
