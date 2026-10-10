@@ -17,6 +17,25 @@ function database() {
   });
 }
 
+async function resolvedEmail(userId, fallback = '') {
+  if (String(fallback || '').trim()) return String(fallback).trim();
+  const config = runtimeConfig();
+  if (!config.persistent) return '';
+  try {
+    const response = await fetch(`${config.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+      headers: {
+        apikey: config.supabaseSecretKey,
+        authorization: `Bearer ${config.supabaseSecretKey}`
+      }
+    });
+    if (!response.ok) return '';
+    const user = await response.json();
+    return String(user?.email || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 const first = (value) => Array.isArray(value) ? value[0] : value;
 
 export async function startOperatorShift({ tenantId, userId, role, email }) {
@@ -30,13 +49,14 @@ export async function startOperatorShift({ tenantId, userId, role, email }) {
       limit: 1
     }
   }));
+  const operatorEmail = current?.operator_email || await resolvedEmail(userId, email);
   if (current) {
     const rows = await db.request('operator_shifts', {
       method: 'PATCH',
       query: { id: `eq.${current.id}`, tenant_id: `eq.${tenantId}` },
       body: {
         last_seen_at: new Date().toISOString(),
-        operator_email: String(email || current.operator_email || '').trim() || null
+        operator_email: operatorEmail || null
       },
       prefer: 'return=representation'
     });
@@ -48,7 +68,7 @@ export async function startOperatorShift({ tenantId, userId, role, email }) {
       tenant_id: tenantId,
       user_id: userId,
       role,
-      operator_email: String(email || '').trim() || null,
+      operator_email: operatorEmail || null,
       started_at: new Date().toISOString(),
       last_seen_at: new Date().toISOString()
     },
