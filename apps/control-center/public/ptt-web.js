@@ -1,4 +1,5 @@
 import { api } from '/session.js';
+import '/pwa.js';
 import '/safety-watch.js';
 import '/reservations-ui.js';
 import '/operator-shift-ui.js';
