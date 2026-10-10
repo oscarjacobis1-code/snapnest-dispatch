@@ -92,6 +92,38 @@ test('driver location update reaches state', async () => {
   assert.equal(next.drivers.find((d) => d.id === driver.id).location.lat, 6.81234);
 });
 
+test('scheduled pickup can be rescheduled through the dispatcher API', async () => {
+  const endpoint = `${base}/api/bookings`;
+  const input = {
+    passengerName: 'API Schedule Test', passengers: 1,
+    pickup: { label: 'Camp Street', lat: 6.818, lng: -58.15 },
+    destination: { label: 'Diamond' },
+    scheduledFor: new Date(Date.now() + 45 * 60_000).toISOString()
+  };
+  const bad = await fetch(endpoint, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...input, scheduledFor: new Date(Date.now() - 60_000).toISOString() })
+  });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /future/);
+
+  const create = await fetch(endpoint, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input)
+  });
+  assert.equal(create.status, 201);
+  const booking = await create.json();
+  assert.equal(booking.status, 'scheduled');
+
+  const scheduledFor = new Date(Date.now() + 90 * 60_000).toISOString();
+  const update = await fetch(`${endpoint}/${booking.id}/reschedule`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scheduledFor })
+  });
+  assert.equal(update.status, 200);
+  assert.equal((await update.json()).scheduledFor, scheduledFor);
+  const state = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(state.bookings.find((item) => item.id === booking.id).scheduledFor, scheduledFor);
+});
+
 test('PTT endpoints degrade safely when LiveKit is not configured', async () => {
   const token = await fetch(`${base}/api/ptt/token`);
   assert.equal(token.status, 200);

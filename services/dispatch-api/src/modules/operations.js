@@ -1,4 +1,4 @@
-import { BOOKING_STATUS } from '../dispatch-engine.js';
+import { BOOKING_STATUS, parseScheduledFor } from '../dispatch-engine.js';
 
 const first = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -40,8 +40,8 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
 
   async function createBooking(input) {
     const t = await tenant();
-    const scheduledAt = input.scheduledFor ? new Date(input.scheduledFor) : null;
-    const isScheduled = scheduledAt && Number.isFinite(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now() + 60_000;
+    const scheduledFor = parseScheduledFor(input.scheduledFor);
+    const isScheduled = Boolean(scheduledFor);
     const rows = await db.request('bookings', {
       method: 'POST',
       body: {
@@ -57,7 +57,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
         destination_label: input.destination.label,
         destination_lat: input.destination.lat,
         destination_lng: input.destination.lng,
-        scheduled_for: isScheduled ? scheduledAt.toISOString() : null,
+        scheduled_for: scheduledFor,
         status: isScheduled ? BOOKING_STATUS.SCHEDULED : BOOKING_STATUS.PENDING
       },
       prefer: 'return=representation'
@@ -70,6 +70,23 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
     return isScheduled ? booking : offerNextDriver(booking);
   }
 
+  async function rescheduleBooking({ bookingId, scheduledFor }) {
+    const next = parseScheduledFor(scheduledFor);
+    if (!next) throw new Error('A scheduled pickup time is required.');
+    const t = await tenant();
+    const before = await bookingById(bookingId);
+    if (before.status !== BOOKING_STATUS.SCHEDULED) throw new Error('Only scheduled bookings can be rescheduled.');
+    const rows = await db.request('bookings', {
+      method: 'PATCH',
+      query: { id: `eq.${bookingId}`, tenant_id: `eq.${t.id}`, status: 'eq.scheduled', scheduled_for: `eq.${before.scheduledFor}` },
+      body: { scheduled_for: next, updated_at: new Date().toISOString() },
+      prefer: 'return=representation'
+    });
+    if (!rows?.length) throw new Error('Booking changed while rescheduling. Refresh and try again.');
+    await emit('booking.rescheduled', { bookingId, previousScheduledFor: before.scheduledFor, scheduledFor: next, reservedDriverId: before.reservedDriverId || null });
+    return bookingById(bookingId);
+  }
+
   async function activateScheduledBookings(now = Date.now(), leadMinutes = 15) {
     const t = await tenant();
     const threshold = new Date(now + leadMinutes * 60_000).toISOString();
@@ -78,7 +95,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
         tenant_id: `eq.${t.id}`,
         status: 'eq.scheduled',
         scheduled_for: `lte.${threshold}`,
-        select: 'id,reserved_driver_id',
+        select: 'id,reserved_driver_id,scheduled_for',
         order: 'scheduled_for.asc',
         limit: 25
       }
@@ -87,7 +104,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
     for (const row of rows) {
       const updated = await db.request('bookings', {
         method: 'PATCH',
-        query: { id: `eq.${row.id}`, tenant_id: `eq.${t.id}`, status: 'eq.scheduled' },
+        query: { id: `eq.${row.id}`, tenant_id: `eq.${t.id}`, status: 'eq.scheduled', scheduled_for: `eq.${row.scheduled_for}` },
         body: { status: BOOKING_STATUS.PENDING, updated_at: new Date().toISOString() },
         prefer: 'return=representation'
       });
@@ -337,6 +354,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
 
   return {
     createBooking,
+    rescheduleBooking,
     activateScheduledBookings,
     reserveScheduledBooking,
     clearScheduledReservation,

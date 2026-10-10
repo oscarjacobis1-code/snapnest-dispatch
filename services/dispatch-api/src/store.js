@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, DRIVER_STATUS, chooseNextDriver } from './dispatch-engine.js';
+import { BOOKING_STATUS, DRIVER_STATUS, chooseNextDriver, parseScheduledFor } from './dispatch-engine.js';
 
 const now = Date.now();
 export const state = {
@@ -57,18 +57,29 @@ function offerNextDriver(booking) {
   emit('booking.offered', { bookingId: booking.id, driverId: driver.id, distanceKm: next.distanceKm, score: next.dispatchScore }); return driver;
 }
 export function createBooking(input) {
-  const scheduled = input.scheduledFor && new Date(input.scheduledFor).getTime() > Date.now() + 60_000;
+  const scheduledFor = parseScheduledFor(input.scheduledFor);
+  const scheduled = Boolean(scheduledFor);
   const booking = {
     id: `B${++sequence}`, tenantId: 'demo-base', source: input.source ?? 'web', passengerName: input.passengerName,
     passengerPhone: input.passengerPhone ?? '', passengers: input.passengers, notes: input.notes, pickup: input.pickup,
     destination: input.destination, status: scheduled ? BOOKING_STATUS.SCHEDULED : BOOKING_STATUS.PENDING,
-    createdAt: new Date().toISOString(), scheduledFor: scheduled ? new Date(input.scheduledFor).toISOString() : null,
+    createdAt: new Date().toISOString(), scheduledFor,
     assignedAt: null, arrivedAt: null, startedAt: null, completedAt: null, cancelledAt: null,
     cancellationReason: null, cancellationCode: null, cancelledByRole: null, noShowAt: null, reassignCount: 0,
     assignedDriverId: null, currentOfferDriverId: null, attemptedDriverIds: []
   };
   state.bookings.unshift(booking); upsertCustomer(input); emit('booking.created', { bookingId: booking.id, source: booking.source, scheduledFor: booking.scheduledFor });
   if (!scheduled) offerNextDriver(booking);
+  return booking;
+}
+export function rescheduleBooking({ bookingId, scheduledFor }) {
+  const next = parseScheduledFor(scheduledFor);
+  if (!next) throw new Error('A scheduled pickup time is required.');
+  const booking = getBooking(bookingId);
+  if (booking.status !== BOOKING_STATUS.SCHEDULED) throw new Error('Only scheduled bookings can be rescheduled.');
+  const previousScheduledFor = booking.scheduledFor;
+  booking.scheduledFor = next;
+  emit('booking.rescheduled', { bookingId, previousScheduledFor, scheduledFor: next, reservedDriverId: booking.reservedDriverId || null });
   return booking;
 }
 export function activateScheduledBookings(nowMs = Date.now(), leadMinutes = 15) {

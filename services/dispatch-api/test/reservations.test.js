@@ -51,3 +51,37 @@ test('reserved driver is assigned when a scheduled booking enters the lead windo
   assert.equal(assigned.status, 'assigned');
   assert.equal(assigned.assignedDriverId, 'd2');
 });
+
+test('invalid or past scheduled times never create an immediate booking', async () => {
+  const { store } = createRuntimeStore({});
+  const input = {
+    passengerName: 'Schedule Validation', passengers: 1,
+    pickup: { label: 'Pickup', lat: 6.812, lng: -58.155 },
+    destination: { label: 'Destination', lat: 6.82, lng: -58.16 }
+  };
+  await assert.rejects(store.createBooking({ ...input, scheduledFor: 'bad-date' }), /invalid/);
+  await assert.rejects(store.createBooking({ ...input, scheduledFor: new Date(Date.now() - 60_000).toISOString() }), /future/);
+  const state = await store.publicState();
+  assert.ok(!state.bookings.some((booking) => booking.passengerName === input.passengerName));
+});
+
+test('rescheduling preserves the reserved driver and moves the activation window', async () => {
+  const { store } = createRuntimeStore({});
+  const booking = await store.createBooking({
+    passengerName: 'Reschedule Test', passengers: 1,
+    pickup: { label: 'Pickup', lat: 6.812, lng: -58.155 },
+    destination: { label: 'Destination', lat: 6.82, lng: -58.16 },
+    scheduledFor: futureIso(10)
+  });
+  await store.reserveScheduledBooking({ bookingId: booking.id, driverId: 'd1' });
+  const changed = await store.rescheduleBooking({ bookingId: booking.id, scheduledFor: futureIso(60) });
+  assert.equal(changed.reservedDriverId, 'd1');
+  assert.ok((await store.driverUpcoming('d1')).some((item) => item.id === booking.id && item.scheduledFor === changed.scheduledFor));
+  assert.ok(!(await store.activateScheduledBookings(Date.now(), 15)).some((item) => item.id === booking.id));
+  assert.equal(changed.status, 'scheduled');
+  await assert.rejects(store.rescheduleBooking({ bookingId: booking.id, scheduledFor: 'nonsense' }), /invalid/);
+  await assert.rejects(store.rescheduleBooking({ bookingId: booking.id, scheduledFor: futureIso(-5) }), /future/);
+  assert.equal((await store.getBooking(booking.id)).scheduledFor, changed.scheduledFor);
+  await store.cancelBooking({ bookingId: booking.id, reason: 'test' });
+  await assert.rejects(store.rescheduleBooking({ bookingId: booking.id, scheduledFor: futureIso(90) }), /Only scheduled/);
+});

@@ -100,6 +100,7 @@ export function createRuntimeStore(env = process.env) {
       setDriverStatus,
       updateDriverLocation: async (id, location) => memory.updateDriverLocation(id, location),
       createBooking: async (input) => memory.createBooking(input),
+      rescheduleBooking: async (input) => memory.rescheduleBooking(input),
       activateScheduledBookings,
       reserveScheduledBooking,
       clearScheduledReservation,

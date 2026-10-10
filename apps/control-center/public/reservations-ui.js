@@ -8,7 +8,7 @@ style.textContent = `
   .reservation-panel{margin-top:14px;padding:14px;border-radius:14px;background:rgba(13,42,64,.07);border:1px solid rgba(13,42,64,.12)}
   .reservation-panel .reservation-label{display:block;margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:.08em;color:#68747c;text-transform:uppercase}
   .reservation-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
-  .reservation-row select{min-width:0;width:100%;height:42px;border-radius:10px;border:1px solid #dfe4e7;background:#fff;padding:0 10px;color:#17232c}
+  .reservation-row select,.reservation-row input{min-width:0;width:100%;height:42px;border-radius:10px;border:1px solid #dfe4e7;background:#fff;padding:0 10px;color:#17232c}
   .reservation-current{margin-top:8px;font-size:10px;color:#68747c}
   .reservation-clear{margin-top:7px;border:0;background:transparent;color:#b54a51;font-size:10px;font-weight:700;cursor:pointer;padding:0}
   .reservation-note{margin-top:9px;font-size:10px;line-height:1.45;color:#68747c}
@@ -21,6 +21,11 @@ document.addEventListener('click', (event) => {
   managedBookingId = manage.dataset.manageBooking;
   setTimeout(renderReservationPanel, 60);
 });
+
+function localDateTime(iso) {
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 async function renderReservationPanel() {
   if (!managedBookingId) return;
@@ -38,6 +43,12 @@ async function renderReservationPanel() {
     const panel = document.createElement('div');
     panel.className = 'reservation-panel';
     panel.innerHTML = `
+      <label class="reservation-label" for="reservationPickupTime">Scheduled pickup</label>
+      <div class="reservation-row">
+        <input id="reservationPickupTime" type="datetime-local" value="${escapeHtml(localDateTime(booking.scheduledFor))}" required>
+        <button id="rescheduleButton" class="btn primary compact" type="button">Reschedule</button>
+      </div>
+      <div class="reservation-note">Changing the pickup time keeps this driver reservation. Confirm the new time with the passenger and driver.</div>
       <span class="reservation-label">Driver reservation</span>
       <div class="reservation-row">
         <select id="reservationDriver" aria-label="Reserve scheduled job to driver">
@@ -51,6 +62,28 @@ async function renderReservationPanel() {
       <div class="reservation-note">15 minutes before pickup, SnapNest will try the reserved driver first. If they are unavailable, normal dispatch takes over.</div>
       <div id="reservationStatus" class="form-status"></div>`;
     summary.appendChild(panel);
+
+    panel.querySelector('#rescheduleButton')?.addEventListener('click', async () => {
+      const status = panel.querySelector('#reservationStatus');
+      const value = panel.querySelector('#reservationPickupTime').value;
+      if (!value || !Number.isFinite(new Date(value).getTime())) {
+        status.textContent = 'Choose a valid pickup time.';
+        status.className = 'form-status error';
+        return;
+      }
+      status.textContent = 'Saving pickup time…';
+      status.className = 'form-status';
+      try {
+        await api(`/api/bookings/${encodeURIComponent(managedBookingId)}/reschedule`, {
+          method: 'POST', body: JSON.stringify({ scheduledFor: new Date(value).toISOString() })
+        });
+        status.textContent = 'Pickup time updated. Confirm it with the passenger and driver.';
+        status.className = 'form-status success';
+      } catch (error) {
+        status.textContent = error.message || 'Could not reschedule booking.';
+        status.className = 'form-status error';
+      }
+    });
 
     panel.querySelector('#reserveDriverButton')?.addEventListener('click', async () => {
       const driverId = panel.querySelector('#reservationDriver')?.value;
