@@ -1,6 +1,7 @@
 import { api } from '/session.js';
 import '/safety-watch.js';
 import '/reservations-ui.js';
+import '/operator-shift-ui.js';
 
 let room = null;
 let leaseToken = null;
