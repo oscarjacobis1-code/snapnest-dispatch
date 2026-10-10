@@ -143,9 +143,14 @@ export function createSupabaseStore(config) {
   async function setDriverStatus(driverId, status) {
     if (!Object.values(DRIVER_STATUS).includes(status)) throw new Error('Invalid driver status.');
     const t = await tenant();
-    const rows = await db.request('drivers', { method: 'PATCH', query: { id: `eq.${driverId}`, tenant_id: `eq.${t.id}` }, body: { status, available_since: status === DRIVER_STATUS.AVAILABLE ? new Date().toISOString() : null, last_seen_at: new Date().toISOString() }, prefer: 'return=representation' });
-    const driver = first(rows); if (!driver) throw new Error('Driver not found.');
-    await emit('driver.status', { driverId, status }); return driver;
+    const driver = first(await db.rpc('set_driver_status_with_shift', {
+      p_tenant_id: t.id,
+      p_driver_id: driverId,
+      p_status: status
+    }));
+    if (!driver) throw new Error('Driver not found.');
+    await emit('driver.status', { driverId, status });
+    return driver;
   }
 
   async function updateDriverLocation(driverId, location) {
@@ -257,6 +262,7 @@ export function createSupabaseStore(config) {
     requeueBooking: operations.requeueBooking,
     cancelBooking: operations.cancelBooking,
     driverHistory: operations.driverHistory,
+    driverShiftSummary: operations.driverShiftSummary,
     listCustomers: operations.listCustomers,
     createSupportTicket: operations.createSupportTicket,
     listSupportTickets: operations.listSupportTickets,
