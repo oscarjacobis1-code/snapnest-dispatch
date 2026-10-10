@@ -31,12 +31,12 @@ jobs:
         run: gradle --no-daemon assembleDebug -PDISPATCH_API_URL=https://snapnest-dispatch.onrender.com
 
       - name: Name field-test APK
-        run: cp apps/driver-android/app/build/outputs/apk/debug/app-debug.apk snapnest-dispatch-driver-v0.4.0-field-test.apk
+        run: cp apps/driver-android/app/build/outputs/apk/debug/app-debug.apk snapnest-dispatch-driver-v0.5.0-field-test.apk
 
       - name: Upload field-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: snapnest-dispatch-driver-v0.4.0-field-test
-          path: snapnest-dispatch-driver-v0.4.0-field-test.apk
+          name: snapnest-dispatch-driver-v0.5.0-field-test
+          path: snapnest-dispatch-driver-v0.5.0-field-test.apk
           if-no-files-found: error
           retention-days: 30
