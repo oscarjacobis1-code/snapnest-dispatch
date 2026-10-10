@@ -19,23 +19,27 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
+import kotlin.math.max
 
 class MainActivity : Activity() {
     companion object {
         private const val NAVY = 0xFF173F5F.toInt()
         private const val NAVY_DARK = 0xFF0D2A40.toInt()
         private const val INK = 0xFF071A27.toInt()
-        private const val PANEL = 0xFF102F45.toInt()
+        private const val PANEL = 0xE61A3344.toInt()
+        private const val PANEL_SOFT = 0xC91C3648.toInt()
         private const val ORANGE = 0xFFEF6A00.toInt()
-        private const val MUTED = 0xFF94A8B5.toInt()
-        private const val GREEN = 0xFF22C55E.toInt()
-        private const val AMBER = 0xFFF59E0B.toInt()
-        private const val RED = 0xFFEF4444.toInt()
+        private const val MUTED = 0xFFA7B6C0.toInt()
+        private const val GREEN = 0xFF2DD67B.toInt()
+        private const val AMBER = 0xFFF2A321.toInt()
+        private const val RED = 0xFFEF5A67.toInt()
         private const val OFFWHITE = 0xFFF7F5F0.toInt()
+        private const val GLASS_STROKE = 0x55FFFFFF
     }
 
     private lateinit var sessionStore: SessionStore
@@ -55,6 +59,7 @@ class MainActivity : Activity() {
     private var jobContainer: LinearLayout? = null
     private var primaryButton: Button? = null
     private var secondaryButton: Button? = null
+    private var slideAction: FrameLayout? = null
     private var mapView: WebView? = null
     private var mapReady = false
     private var currentSnapshot: DriverApi.DriverSnapshot? = null
@@ -105,130 +110,116 @@ class MainActivity : Activity() {
         mapView = null
         mapReady = false
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(28), dp(30), dp(28), dp(30))
-            setBackgroundColor(INK)
+        val root = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF061722.toInt(), NAVY_DARK, 0xFF0A3956.toInt())
+            )
         }
 
-        root.addView(TextView(this).apply {
-            text = "SNAPNEST"
+        root.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(0x552B89FF, Color.TRANSPARENT)
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = dp(230).toFloat()
+            }
+            alpha = .65f
+        }, FrameLayout.LayoutParams(dp(360), dp(360)).apply {
+            gravity = Gravity.TOP or Gravity.END
+            topMargin = -dp(100)
+            rightMargin = -dp(120)
+        })
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22), dp(56), dp(22), dp(28))
+        }
+
+        val logo = SnapNestLogoView(this)
+        content.addView(logo, LinearLayout.LayoutParams(dp(76), dp(76)).apply { bottomMargin = dp(8) })
+        content.addView(TextView(this).apply {
+            text = "SnapNest Dispatch"
+            setTextColor(Color.WHITE)
+            textSize = 27f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        })
+        content.addView(TextView(this).apply {
+            text = "DRIVER"
+            setTextColor(ORANGE)
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = .18f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(52))
+        })
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(26), dp(24), dp(24))
+            background = glass(PANEL_SOFT, 28f)
+            elevation = dp(14).toFloat()
+        }
+        card.addView(TextView(this).apply {
+            text = "WELCOME BACK"
+            setTextColor(0xFFD8E3E9.toInt())
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = .14f
+        })
+        card.addView(TextView(this).apply {
+            text = "Start your shift"
             setTextColor(Color.WHITE)
             textSize = 29f
             typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = .04f
+            setPadding(0, dp(10), 0, dp(4))
         })
-        root.addView(TextView(this).apply {
-            text = "DISPATCH DRIVER"
-            setTextColor(ORANGE)
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = .16f
-            setPadding(0, dp(5), 0, dp(34))
-        })
-        root.addView(TextView(this).apply {
-            text = "Ready when you are."
-            setTextColor(Color.WHITE)
-            textSize = 30f
-            typeface = Typeface.DEFAULT_BOLD
-        })
-        root.addView(TextView(this).apply {
-            text = "Sign in once. SnapNest keeps your driver session secured on this device."
-            setTextColor(MUTED)
-            textSize = 15f
-            setPadding(0, dp(8), 0, dp(28))
-        })
-
-        emailInput = EditText(this).apply {
-            hint = "Driver email"
-            setHintTextColor(MUTED)
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-            setSingleLine(true)
-            setPadding(dp(16), 0, dp(16), 0)
-            background = rounded(PANEL, 16f, 0xFF31566D.toInt(), 1)
-        }
-        root.addView(emailInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)).apply { bottomMargin = dp(12) })
-
-        passwordInput = EditText(this).apply {
-            hint = "Password"
-            setHintTextColor(MUTED)
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine(true)
-            setPadding(dp(16), 0, dp(16), 0)
-            background = rounded(PANEL, 16f, 0xFF31566D.toInt(), 1)
-        }
-        root.addView(passwordInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)).apply { bottomMargin = dp(16) })
-
-        root.addView(actionButton("SIGN IN", true).apply { setOnClickListener { signIn() } }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
-
-        statusText = TextView(this).apply {
-            text = "Connected to the SnapNest Dispatch live service."
+        card.addView(TextView(this).apply {
+            text = "Sign in once. Stay connected while you're on duty."
             setTextColor(MUTED)
             textSize = 13f
-            setPadding(0, dp(18), 0, 0)
+            setPadding(0, 0, 0, dp(24))
+        })
+
+        emailInput = glassInput("Driver email", false)
+        passwordInput = glassInput("Password", true)
+        card.addView(emailInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { bottomMargin = dp(12) })
+        card.addView(passwordInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { bottomMargin = dp(18) })
+        card.addView(actionButton("SIGN IN", true).apply { setOnClickListener { signIn() } }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)))
+
+        statusText = TextView(this).apply {
+            text = "Connected to SnapNest Dispatch."
+            setTextColor(MUTED)
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, 0)
         }
-        root.addView(statusText)
+        card.addView(statusText)
+        content.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        content.addView(TextView(this).apply {
+            text = "Powered by SnapNest Digital Solutions"
+            setTextColor(0xFF7F96A4.toInt())
+            textSize = 9f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(38), 0, 0)
+        })
+
+        scroll.addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
     }
 
     private fun showDriverHome() {
         val session = sessionStore.load() ?: return showLogin()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(INK)
-        }
+        val root = FrameLayout(this).apply { setBackgroundColor(INK) }
 
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(17), dp(20), dp(15))
-        }
-        val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brand.addView(TextView(this).apply {
-            text = "SNAPNEST"
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = .04f
-        })
-        brand.addView(TextView(this).apply {
-            text = "DISPATCH"
-            setTextColor(ORANGE)
-            textSize = 9f
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = .18f
-        })
-        header.addView(brand, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
-        val identity = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
-        }
-        driverNameText = TextView(this).apply {
-            text = session.driverName.ifBlank { "Driver" }
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-        }
-        vehicleText = TextView(this).apply {
-            text = session.vehicle.ifBlank { "Checking vehicle…" }
-            setTextColor(MUTED)
-            textSize = 11f
-        }
-        identity.addView(driverNameText)
-        identity.addView(vehicleText)
-        header.addView(identity)
-        root.addView(header)
-
-        val mapFrame = FrameLayout(this).apply {
-            background = rounded(NAVY_DARK, 22f)
-            clipToOutline = true
-        }
         mapView = WebView(this).apply {
             setBackgroundColor(NAVY_DARK)
             settings.javaScriptEnabled = true
@@ -244,75 +235,135 @@ class MainActivity : Activity() {
             }
             loadUrl("file:///android_asset/driver_map.html")
         }
-        mapFrame.addView(mapView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        root.addView(mapFrame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(285)).apply {
-            leftMargin = dp(14); rightMargin = dp(14); bottomMargin = dp(12)
+        root.addView(mapView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+        root.addView(View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xD900111A.toInt(), 0x4400111A, Color.TRANSPARENT)
+            )
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(190)).apply { gravity = Gravity.TOP })
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(14), dp(10))
+            background = glass(0xD9152B3B.toInt(), 22f)
+            elevation = dp(8).toFloat()
+        }
+        header.addView(SnapNestLogoView(this), LinearLayout.LayoutParams(dp(40), dp(40)).apply { rightMargin = dp(10) })
+        val identity = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        driverNameText = TextView(this).apply {
+            text = session.driverName.ifBlank { "Driver" }
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        vehicleText = TextView(this).apply {
+            text = session.vehicle.ifBlank { "Checking vehicle…" }
+            setTextColor(MUTED)
+            textSize = 10f
+        }
+        identity.addView(driverNameText)
+        identity.addView(vehicleText)
+        header.addView(identity, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val live = TextView(this).apply {
+            text = "● LIVE"
+            setTextColor(GREEN)
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        header.addView(live)
+        root.addView(header, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(62)).apply {
+            gravity = Gravity.TOP
+            leftMargin = dp(14)
+            rightMargin = dp(14)
+            topMargin = dp(20)
         })
 
-        val scroll = ScrollView(this).apply { isFillViewport = true }
         val sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(24))
-            background = rounded(PANEL, 26f)
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = glass(PANEL, 28f)
+            elevation = dp(18).toFloat()
         }
 
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         statusChip = TextView(this).apply {
             gravity = Gravity.CENTER
-            textSize = 11f
+            textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(12), dp(7), dp(12), dp(7))
+            setPadding(dp(11), dp(7), dp(11), dp(7))
         }
-        sheet.addView(statusChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(13) })
+        topRow.addView(statusChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        topRow.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
+        networkChip = connectionChip("CONNECTING")
+        topRow.addView(networkChip, LinearLayout.LayoutParams(dp(76), dp(30)))
+        sheet.addView(topRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
         headlineText = TextView(this).apply {
             text = "Checking duty status…"
             setTextColor(Color.WHITE)
-            textSize = 27f
+            textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
         }
         sheet.addView(headlineText)
         sublineText = TextView(this).apply {
             text = "Connecting to dispatch."
             setTextColor(MUTED)
-            textSize = 14f
-            setPadding(0, dp(4), 0, dp(16))
+            textSize = 13f
+            setPadding(0, dp(3), 0, dp(14))
         }
         sheet.addView(sublineText)
 
-        val connections = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        gpsChip = connectionChip("GPS…")
-        radioChip = connectionChip("PTT BUBBLE")
-        networkChip = connectionChip("CONNECTING")
-        connections.addView(gpsChip, LinearLayout.LayoutParams(0, dp(36), 1f).apply { rightMargin = dp(7) })
-        connections.addView(radioChip, LinearLayout.LayoutParams(0, dp(36), 1f).apply { rightMargin = dp(7) })
-        connections.addView(networkChip, LinearLayout.LayoutParams(0, dp(36), 1f))
-        sheet.addView(connections, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)).apply { bottomMargin = dp(18) })
-
         jobContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            background = rounded(NAVY_DARK, 18f, 0xFF2D5268.toInt(), 1)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = glass(0xAA0C2330.toInt(), 20f)
         }
-        sheet.addView(jobContainer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
+        sheet.addView(jobContainer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
 
         primaryButton = actionButton("CHECKING…", true)
         secondaryButton = actionButton("END SHIFT", false)
-        sheet.addView(primaryButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)).apply { bottomMargin = dp(10) })
-        sheet.addView(secondaryButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)))
+        sheet.addView(primaryButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { bottomMargin = dp(9) })
+        sheet.addView(secondaryButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)))
+
+        slideAction = buildSlideAction("SLIDE TO START") { }
+        slideAction?.visibility = View.GONE
+        sheet.addView(slideAction, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { topMargin = dp(2) })
+
+        val connectionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        gpsChip = connectionChip("GPS…")
+        radioChip = connectionChip("PTT")
+        connectionRow.addView(gpsChip, LinearLayout.LayoutParams(0, dp(30), 1f).apply { rightMargin = dp(7) })
+        connectionRow.addView(radioChip, LinearLayout.LayoutParams(0, dp(30), 1f))
+        sheet.addView(connectionRow)
 
         statusText = TextView(this).apply {
             text = ""
             setTextColor(MUTED)
-            textSize = 12f
-            setPadding(0, dp(14), 0, 0)
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, 0)
         }
         sheet.addView(statusText)
 
-        scroll.addView(sheet, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
-        root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(sheet, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.BOTTOM
+            leftMargin = dp(14)
+            rightMargin = dp(14)
+            bottomMargin = dp(14)
+        })
+
         setContentView(root)
         applySnapshot(currentSnapshot ?: DriverApi.DriverSnapshot(session.driverName.ifBlank { "Driver" }, session.vehicle, "unknown", null, null))
         startPolling()
@@ -358,9 +409,9 @@ class MainActivity : Activity() {
             "available" -> styleStatusChip(chip, "AVAILABLE", GREEN)
             "offered" -> styleStatusChip(chip, "NEW JOB", ORANGE)
             "busy" -> styleStatusChip(chip, "ON JOB", AMBER)
-            "unavailable" -> styleStatusChip(chip, "UNAVAILABLE", 0xFF64748B.toInt())
-            "offline" -> styleStatusChip(chip, "OFF DUTY", 0xFF64748B.toInt())
-            else -> styleStatusChip(chip, "SYNCING", 0xFF64748B.toInt())
+            "unavailable" -> styleStatusChip(chip, "UNAVAILABLE", 0xFF94A3B8.toInt())
+            "offline" -> styleStatusChip(chip, "OFF DUTY", 0xFF94A3B8.toInt())
+            else -> styleStatusChip(chip, "SYNCING", 0xFF94A3B8.toInt())
         }
 
         val offer = snapshot.offer
@@ -378,49 +429,60 @@ class MainActivity : Activity() {
     }
 
     private fun renderWaiting() {
-        headlineText?.text = "You're available"
-        sublineText?.text = "Waiting for the next dispatch. Keep the PTT bubble nearby."
+        headlineText?.text = "You're online"
+        sublineText?.text = "Waiting for your next dispatch."
         fillJobCard(
-            "WAITING FOR DISPATCH",
-            "Your live location is being shared while you are on duty.",
-            "SnapNest will surface the next trip here and in your notifications."
+            "READY FOR WORK",
+            "Dispatch is watching your live position while you're available.",
+            "New trips will appear here and in your notification tray."
         )
+        slideAction?.visibility = View.GONE
         primaryButton?.apply {
+            visibility = View.VISIBLE
             text = "GO UNAVAILABLE"
             setOnClickListener { setStatus("unavailable") }
         }
         secondaryButton?.apply {
             visibility = View.VISIBLE
             text = "END SHIFT"
-            setOnClickListener {
-                pendingDutyStatus = null
-                setStatus("offline")
-            }
+            setOnClickListener { setStatus("offline") }
         }
     }
 
     private fun renderOffDuty(status: String) {
         headlineText?.text = if (status == "unavailable") "You're unavailable" else "Shift ended"
-        sublineText?.text = "Your GPS and driver radio are not active."
-        fillJobCard("OFF DUTY", "No new trips will be assigned while you are offline.", "Tap Go Available when you're ready to work.")
+        sublineText?.text = if (status == "unavailable") "You're still connected to dispatch, but not receiving jobs." else "Location sharing and driver radio are off."
+        fillJobCard(
+            if (status == "unavailable") "PAUSED" else "OFF DUTY",
+            if (status == "unavailable") "Your GPS is paused until you go available again." else "No new trips will be assigned while your shift is ended.",
+            "Tap Go Available when you're ready to work."
+        )
+        slideAction?.visibility = View.GONE
         primaryButton?.apply {
+            visibility = View.VISIBLE
             text = "GO AVAILABLE"
             setOnClickListener { enableDuty("available") }
         }
-        secondaryButton?.visibility = View.GONE
+        secondaryButton?.visibility = if (status == "unavailable") View.VISIBLE else View.GONE
+        secondaryButton?.apply {
+            text = "END SHIFT"
+            setOnClickListener { setStatus("offline") }
+        }
     }
 
     private fun renderOffer(offer: DriverApi.ActiveOffer) {
         headlineText?.text = "New trip"
-        sublineText?.text = "Review the pickup before accepting."
+        sublineText?.text = "Review the trip before accepting."
         jobContainer?.removeAllViews()
         addJobKicker("NEW TRIP")
-        addJobRoute("PICKUP", offer.pickup)
-        addJobRoute("DESTINATION", offer.destination)
+        addJobRoute("PICKUP", offer.pickup, GREEN)
+        addJobRoute("DESTINATION", offer.destination, ORANGE)
         addJobMeta("${offer.passengerName} · ${offer.passengers} passenger${if (offer.passengers == 1) "" else "s"}")
         if (offer.notes.isNotBlank()) addJobMeta(offer.notes)
 
+        slideAction?.visibility = View.GONE
         primaryButton?.apply {
+            visibility = View.VISIBLE
             text = "ACCEPT TRIP"
             setOnClickListener { respondToOffer(offer, true) }
         }
@@ -434,26 +496,37 @@ class MainActivity : Activity() {
     private fun renderTrip(trip: DriverApi.ActiveTrip) {
         val inProgress = trip.status == "in_progress"
         headlineText?.text = if (inProgress) "Trip in progress" else "Heading to pickup"
-        sublineText?.text = if (inProgress) "Keep your attention on the road. PTT stays available over Maps." else "Navigate to the pickup, then start the trip."
+        sublineText?.text = if (inProgress) "Navigation and PTT stay available while you drive." else "Navigate to the pickup, then start the trip."
         jobContainer?.removeAllViews()
         addJobKicker(if (inProgress) "ON TRIP" else "ASSIGNED")
-        addJobRoute("PICKUP", trip.pickup)
-        addJobRoute("DESTINATION", trip.destination)
+        addJobRoute("PICKUP", trip.pickup, GREEN)
+        addJobRoute("DESTINATION", trip.destination, ORANGE)
         addJobMeta("${trip.passengerName} · ${trip.passengers} passenger${if (trip.passengers == 1) "" else "s"}")
         if (trip.notes.isNotBlank()) addJobMeta(trip.notes)
 
         primaryButton?.apply {
+            visibility = View.VISIBLE
             text = if (inProgress) "NAVIGATE TO DESTINATION" else "NAVIGATE TO PICKUP"
             setOnClickListener {
                 if (inProgress) navigate(trip.destinationLat, trip.destinationLng, trip.destination)
                 else navigate(trip.pickupLat, trip.pickupLng, trip.pickup)
             }
         }
-        secondaryButton?.apply {
-            visibility = View.VISIBLE
-            text = if (inProgress) "COMPLETE TRIP" else "START TRIP"
-            setOnClickListener { updateTrip(trip, if (inProgress) "complete" else "start") }
+        secondaryButton?.visibility = View.GONE
+        slideAction = replaceSlideAction(if (inProgress) "SLIDE TO COMPLETE" else "SLIDE TO START") {
+            updateTrip(trip, if (inProgress) "complete" else "start")
         }
+    }
+
+    private fun replaceSlideAction(label: String, action: () -> Unit): FrameLayout? {
+        val current = slideAction ?: return null
+        val parent = current.parent as? LinearLayout ?: return current
+        val index = parent.indexOfChild(current)
+        parent.removeView(current)
+        val next = buildSlideAction(label, action)
+        parent.addView(next, index, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { topMargin = dp(2) })
+        next.visibility = View.VISIBLE
+        return next.also { slideAction = it }
     }
 
     private fun respondToOffer(offer: DriverApi.ActiveOffer, accept: Boolean) {
@@ -484,7 +557,6 @@ class MainActivity : Activity() {
     private fun updateTrip(trip: DriverApi.ActiveTrip, action: String) {
         statusText.text = if (action == "start") "Starting trip…" else "Completing trip…"
         primaryButton?.isEnabled = false
-        secondaryButton?.isEnabled = false
         Thread {
             runCatching { DriverApi.updateTrip(sessionStore, trip.bookingId, action) }
                 .onSuccess {
@@ -497,14 +569,12 @@ class MainActivity : Activity() {
                             statusText.text = "Trip started."
                         }
                         primaryButton?.isEnabled = true
-                        secondaryButton?.isEnabled = true
                         refreshNow()
                     }
                 }
                 .onFailure { error -> runOnUiThread {
                     statusText.text = error.message ?: "Could not update trip."
                     primaryButton?.isEnabled = true
-                    secondaryButton?.isEnabled = true
                     refreshNow()
                 } }
         }.start()
@@ -515,14 +585,25 @@ class MainActivity : Activity() {
             statusText.text = "Driver session expired. Sign in again."
             return
         }
-        statusText.text = if (status == "available") "Going available…" else if (status == "offline") "Ending shift…" else "Updating status…"
+        statusText.text = when (status) {
+            "available" -> "Going available…"
+            "offline" -> "Ending shift…"
+            else -> "Updating status…"
+        }
         Thread {
             runCatching { DriverApi.postStatus(sessionStore, status) }
                 .onSuccess {
                     runOnUiThread {
                         when (status) {
-                            "available" -> startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
-                            "unavailable", "offline" -> stopDutyServices()
+                            "available" -> {
+                                startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
+                                startForegroundService(Intent(this, DriverLocationService::class.java))
+                            }
+                            "unavailable" -> {
+                                stopService(Intent(this, DriverLocationService::class.java))
+                                startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_UNAVAILABLE))
+                            }
+                            "offline" -> stopDutyServices()
                         }
                         statusText.text = when (status) {
                             "available" -> "You're available."
@@ -570,13 +651,21 @@ class MainActivity : Activity() {
     }
 
     private fun ensureDutyServicesForStatus(status: String) {
-        if (status !in setOf("available", "offered", "busy")) return
         if (!Settings.canDrawOverlays(this)) return
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
-        startForegroundService(Intent(this, OverlayService::class.java).setAction(if (status == "busy") OverlayService.ACTION_BUSY else OverlayService.ACTION_AVAILABLE))
-        startForegroundService(Intent(this, DriverLocationService::class.java))
-        styleConnectionChip(radioChip, "PTT READY", ORANGE)
+        when (status) {
+            "available", "offered", "busy" -> {
+                if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+                startForegroundService(Intent(this, OverlayService::class.java).setAction(if (status == "busy") OverlayService.ACTION_BUSY else OverlayService.ACTION_AVAILABLE))
+                startForegroundService(Intent(this, DriverLocationService::class.java))
+                styleConnectionChip(radioChip, "PTT READY", ORANGE)
+            }
+            "unavailable" -> {
+                stopService(Intent(this, DriverLocationService::class.java))
+                startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_UNAVAILABLE))
+                styleConnectionChip(radioChip, "PTT READY", 0xFF94A3B8.toInt())
+            }
+        }
     }
 
     private fun stopDutyServices() {
@@ -605,9 +694,9 @@ class MainActivity : Activity() {
         jobContainer?.addView(TextView(this).apply {
             text = title
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(9), 0, dp(6))
+            setPadding(0, dp(8), 0, dp(5))
         })
         addJobMeta(detail)
     }
@@ -616,30 +705,40 @@ class MainActivity : Activity() {
         jobContainer?.addView(TextView(this).apply {
             text = textValue
             setTextColor(ORANGE)
-            textSize = 10f
+            textSize = 9f
             typeface = Typeface.DEFAULT_BOLD
             letterSpacing = .12f
         })
     }
 
-    private fun addJobRoute(label: String, value: String) {
+    private fun addJobRoute(label: String, value: String, dotColor: Int) {
         val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(11), 0, dp(5))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            setPadding(0, dp(10), 0, dp(5))
         }
         row.addView(TextView(this).apply {
+            text = "●"
+            setTextColor(dotColor)
+            textSize = 14f
+            gravity = Gravity.TOP
+            setPadding(0, dp(1), dp(10), 0)
+        })
+        val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        copy.addView(TextView(this).apply {
             text = label
             setTextColor(MUTED)
-            textSize = 10f
+            textSize = 9f
             typeface = Typeface.DEFAULT_BOLD
             letterSpacing = .1f
         })
-        row.addView(TextView(this).apply {
+        copy.addView(TextView(this).apply {
             text = value.ifBlank { "Not provided" }
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
         })
+        row.addView(copy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         jobContainer?.addView(row)
     }
 
@@ -647,8 +746,8 @@ class MainActivity : Activity() {
         jobContainer?.addView(TextView(this).apply {
             text = value
             setTextColor(MUTED)
-            textSize = 12f
-            setPadding(0, dp(5), 0, 0)
+            textSize = 11f
+            setPadding(0, dp(4), 0, 0)
         })
     }
 
@@ -690,6 +789,65 @@ class MainActivity : Activity() {
             else -> "TO PICKUP"
         }
         web.evaluateJavascript("window.snapnestSetJob(${n(pickupLat)},${n(pickupLng)},${n(destinationLat)},${n(destinationLng)},'$label')", null)
+    }
+
+    private fun buildSlideAction(label: String, action: () -> Unit): FrameLayout {
+        val frame = FrameLayout(this).apply {
+            background = glass(0xE6F2F4F5.toInt(), 18f, 0x77FFFFFF)
+        }
+        val labelView = TextView(this).apply {
+            text = label
+            setTextColor(0xFF1C2A33.toInt())
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            letterSpacing = .04f
+        }
+        frame.addView(labelView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val handle = TextView(this).apply {
+            text = "›"
+            setTextColor(Color.WHITE)
+            textSize = 28f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = rounded(ORANGE, 16f)
+            elevation = dp(5).toFloat()
+        }
+        frame.addView(handle, FrameLayout.LayoutParams(dp(46), dp(46)).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            leftMargin = dp(5)
+        })
+
+        var downX = 0f
+        var startTranslation = 0f
+        frame.setOnTouchListener { _, event ->
+            val maxTravel = max(0f, frame.width - dp(56).toFloat())
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    startTranslation = handle.translationX
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    handle.translationX = (startTranslation + event.rawX - downX).coerceIn(0f, maxTravel)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val complete = maxTravel > 0f && handle.translationX >= maxTravel * .72f
+                    if (complete) {
+                        handle.animate().translationX(maxTravel).setDuration(120).withEndAction {
+                            action()
+                            handle.translationX = 0f
+                        }.start()
+                    } else {
+                        handle.animate().translationX(0f).setDuration(160).start()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        return frame
     }
 
     private fun startPolling() {
@@ -739,36 +897,49 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun glassInput(hintValue: String, password: Boolean): EditText = EditText(this).apply {
+        hint = hintValue
+        setHintTextColor(0xFFB9C6CD.toInt())
+        setTextColor(Color.WHITE)
+        textSize = 14f
+        inputType = if (password) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        setSingleLine(true)
+        setPadding(dp(18), 0, dp(18), 0)
+        background = glass(0x663A5261, 17f)
+    }
+
     private fun actionButton(label: String, primary: Boolean): Button = Button(this).apply {
         text = label
-        textSize = 14f
+        textSize = 12f
         typeface = Typeface.DEFAULT_BOLD
         isAllCaps = false
+        letterSpacing = .04f
         setTextColor(if (primary) Color.WHITE else OFFWHITE)
-        background = rounded(if (primary) ORANGE else NAVY_DARK, 17f, if (primary) ORANGE else 0xFF365C73.toInt(), 1)
+        background = if (primary) rounded(ORANGE, 17f) else glass(0xAA102737.toInt(), 17f)
         stateListAnimator = null
+        elevation = if (primary) dp(4).toFloat() else 0f
     }
 
     private fun connectionChip(label: String): TextView = TextView(this).apply {
         gravity = Gravity.CENTER
-        textSize = 9f
+        textSize = 8f
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(MUTED)
         text = label
-        background = rounded(NAVY_DARK, 12f)
+        background = rounded(0x990B1F2B.toInt(), 12f)
     }
 
     private fun styleConnectionChip(view: TextView?, label: String, color: Int) {
         view ?: return
         view.text = label
         view.setTextColor(color)
-        view.background = rounded(NAVY_DARK, 12f, color, 1)
+        view.background = rounded(0x990B1F2B.toInt(), 12f, color, 1)
     }
 
     private fun styleStatusChip(view: TextView, label: String, color: Int) {
         view.text = "●  $label"
         view.setTextColor(color)
-        view.background = rounded(0xFF0B2333.toInt(), 14f, color, 1)
+        view.background = rounded(0xAA091C26.toInt(), 14f, color, 1)
     }
 
     private fun rounded(color: Int, radiusDp: Float, strokeColor: Int? = null, strokeWidthDp: Int = 0): GradientDrawable = GradientDrawable().apply {
@@ -776,6 +947,13 @@ class MainActivity : Activity() {
         setColor(color)
         cornerRadius = dp(radiusDp.toInt()).toFloat()
         if (strokeColor != null && strokeWidthDp > 0) setStroke(dp(strokeWidthDp), strokeColor)
+    }
+
+    private fun glass(color: Int, radiusDp: Float, strokeColor: Int = GLASS_STROKE): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        setColor(color)
+        cornerRadius = dp(radiusDp.toInt()).toFloat()
+        setStroke(dp(1), strokeColor)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
