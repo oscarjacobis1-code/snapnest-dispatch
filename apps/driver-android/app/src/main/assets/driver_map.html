@@ -6,59 +6,61 @@
   <link href="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.js"></script>
   <style>
-    html,body,#map{margin:0;width:100%;height:100%;background:#0d2a40;overflow:hidden}
-    .maplibregl-map{filter:brightness(.72) saturate(.78)}
+    html,body,#map{margin:0;width:100%;height:100%;background:#071a27;overflow:hidden}
+    .maplibregl-map{filter:brightness(.56) saturate(.52) contrast(1.08)}
     .maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right{display:none}
-    .marker{width:20px;height:20px;border-radius:50%;box-shadow:0 0 0 5px rgba(255,255,255,.16)}
-    .driver{background:#ef6a00;border:3px solid white}
-    .pickup{background:white;border:3px solid #173f5f}
-    .destination{background:#ef6a00;border:3px solid #0d2a40}
-    .label{position:absolute;left:14px;top:14px;z-index:3;background:rgba(13,42,64,.88);color:#fff;padding:8px 11px;border-radius:12px;font:600 11px system-ui;letter-spacing:.2px}
+    .marker{position:relative;width:16px;height:16px;border-radius:50%;box-sizing:border-box}
+    .driver{background:#ef6a00;border:3px solid #fff;box-shadow:0 0 0 7px rgba(239,106,0,.18),0 5px 18px rgba(0,0,0,.4)}
+    .driver:after{content:"";position:absolute;inset:-12px;border-radius:50%;border:1px solid rgba(239,106,0,.34);animation:pulse 1.8s ease-out infinite}
+    .pickup{background:#2dd67b;border:3px solid #fff;box-shadow:0 0 0 6px rgba(45,214,123,.15),0 5px 18px rgba(0,0,0,.35)}
+    .destination{background:#ef6a00;border:3px solid #fff;box-shadow:0 0 0 6px rgba(239,106,0,.14),0 5px 18px rgba(0,0,0,.35)}
+    @keyframes pulse{0%{transform:scale(.75);opacity:.9}100%{transform:scale(1.55);opacity:0}}
   </style>
 </head>
 <body>
-  <div class="label" id="label">LIVE LOCATION</div>
   <div id="map"></div>
   <script>
     const map = new maplibregl.Map({
       container:'map',
       style:'https://tiles.openfreemap.org/styles/liberty',
       center:[-58.155,6.812],
-      zoom:12.4,
+      zoom:12.7,
+      pitch:34,
+      bearing:-9,
       attributionControl:false,
       dragRotate:false,
       pitchWithRotate:false
     });
     let driverMarker, pickupMarker, destinationMarker;
-    function marker(className, lng, lat){
-      const el=document.createElement('div'); el.className='marker '+className;
-      return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(map);
+    function marker(className,lng,lat){
+      const el=document.createElement('div');
+      el.className='marker '+className;
+      return new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lng,lat]).addTo(map);
     }
     function fit(){
       const pts=[];
-      [driverMarker,pickupMarker,destinationMarker].forEach(m=>{ if(m) pts.push(m.getLngLat()); });
-      if(pts.length===0) return;
-      if(pts.length===1){ map.easeTo({center:[pts[0].lng,pts[0].lat],zoom:15,duration:500}); return; }
-      const b=new maplibregl.LngLatBounds(); pts.forEach(p=>b.extend(p));
-      map.fitBounds(b,{padding:52,maxZoom:15,duration:550});
+      [driverMarker,pickupMarker,destinationMarker].forEach(m=>{if(m)pts.push(m.getLngLat());});
+      if(pts.length===0)return;
+      if(pts.length===1){map.easeTo({center:[pts[0].lng,pts[0].lat],zoom:15.1,pitch:38,duration:550});return;}
+      const b=new maplibregl.LngLatBounds();pts.forEach(p=>b.extend(p));
+      map.fitBounds(b,{padding:{top:125,bottom:340,left:55,right:55},maxZoom:14.8,duration:600,pitch:34,bearing:-9});
     }
     window.snapnestSetDriverLocation=function(lat,lng){
-      if(!Number.isFinite(lat)||!Number.isFinite(lng)) return;
-      if(!driverMarker) driverMarker=marker('driver',lng,lat); else driverMarker.setLngLat([lng,lat]);
+      if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+      if(!driverMarker)driverMarker=marker('driver',lng,lat);else driverMarker.setLngLat([lng,lat]);
       fit();
     }
     window.snapnestSetJob=function(pLat,pLng,dLat,dLng,label){
       if(pickupMarker){pickupMarker.remove();pickupMarker=null}
       if(destinationMarker){destinationMarker.remove();destinationMarker=null}
-      if(Number.isFinite(pLat)&&Number.isFinite(pLng)) pickupMarker=marker('pickup',pLng,pLat);
-      if(Number.isFinite(dLat)&&Number.isFinite(dLng)) destinationMarker=marker('destination',dLng,dLat);
-      document.getElementById('label').textContent=label||'LIVE LOCATION';
+      if(Number.isFinite(pLat)&&Number.isFinite(pLng))pickupMarker=marker('pickup',pLng,pLat);
+      if(Number.isFinite(dLat)&&Number.isFinite(dLng))destinationMarker=marker('destination',dLng,dLat);
       fit();
     }
     window.snapnestClearJob=function(){
       if(pickupMarker){pickupMarker.remove();pickupMarker=null}
       if(destinationMarker){destinationMarker.remove();destinationMarker=null}
-      document.getElementById('label').textContent='LIVE LOCATION'; fit();
+      fit();
     }
   </script>
 </body>
