@@ -51,6 +51,7 @@ export function createAuthModule({ config, store, fetchImpl = fetch }) {
     const url = new URL(`${config.supabaseUrl}/auth/v1/authorize`);
     url.searchParams.set('provider', cleanProvider);
     url.searchParams.set('redirect_to', redirect);
+    if (cleanProvider === 'azure') url.searchParams.set('scopes', 'email');
     return url.toString();
   }
 
