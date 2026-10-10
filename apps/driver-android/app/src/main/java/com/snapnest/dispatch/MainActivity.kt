@@ -28,10 +28,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = 0xFF0D2A40.toInt()
-        window.navigationBarColor = 0xFF071A27.toInt()
+        window.navigationBarColor = 0xFF061722.toInt()
         sessionStore = SessionStore(this)
         captureAuthIntent(intent)
-        setContent { DispatchAppRoot(this) }
+        setContent { DispatchAppRootV10(this) }
     }
 
     override fun onNewIntent(intent: Intent) {
