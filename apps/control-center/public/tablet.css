@@ -1,0 +1,64 @@
+/* Tablet/PWA refinements. Loaded after dispatcher-v2.css. */
+.dispatch-connection-banner{position:fixed;top:0;left:0;right:0;z-index:5000;display:none;align-items:center;justify-content:center;gap:8px;padding:7px 12px;background:#8f2f2f;color:#fff;font-size:10px;font-weight:750;letter-spacing:.01em;box-shadow:0 2px 8px rgba(23,35,44,.18)}
+.dispatch-connection-banner:before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;opacity:.85}
+body.dispatch-offline .dispatch-connection-banner{display:flex}
+body.dispatch-offline .dispatch-shell{padding-top:29px}
+
+@media (pointer:coarse){
+  .dispatch-nav-item,.dispatch-side-link,.booking-tab,.text-action,.icon-button{min-height:42px}
+  .btn{min-height:44px}
+  .dispatch-nav-item{display:flex;align-items:center}
+  .booking-tab{display:inline-flex;align-items:center;justify-content:center}
+  .text-action{padding:9px 4px}
+  .dispatch-booking{padding-top:16px;padding-bottom:16px}
+  .compact-driver{min-height:48px}
+}
+
+/* Keep the live map and queue side by side on common 10–12 inch landscape tablets. */
+@media (min-width:900px) and (max-width:1180px){
+  .dispatch-shell{grid-template-columns:176px minmax(0,1fr)}
+  .dispatch-main{padding:20px 18px 34px}
+  .dispatch-sidebar{padding-left:10px;padding-right:10px}
+  .dispatch-topbar{gap:14px}
+  .dispatch-actions{flex-wrap:wrap;justify-content:flex-end}
+  .dispatch-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .dispatch-stat{border-bottom:0!important;border-right:1px solid #e9edef!important;padding-left:12px;padding-right:12px}
+  .dispatch-stat:last-child{border-right:0!important}
+  .dispatch-stat strong{font-size:23px}
+  .dispatch-operations{grid-template-columns:minmax(0,1.42fr) minmax(260px,.7fr);min-height:480px}
+  .dispatch-map{height:432px}
+  .dispatch-queue-card{max-height:480px}
+  .dispatch-lower-grid{grid-template-columns:minmax(0,1fr) minmax(260px,.75fr)}
+  .live-trip-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (min-width:761px) and (max-width:899px){
+  .dispatch-shell{grid-template-columns:158px minmax(0,1fr)}
+  .dispatch-main{padding:18px 14px 32px}
+  .dispatch-sidebar{padding:18px 9px 14px}
+  .dispatch-brand{padding-bottom:20px}
+  .dispatch-nav-item{padding-left:9px;padding-right:9px}
+  .dispatch-topbar{align-items:flex-start;flex-direction:column}
+  .dispatch-actions{width:100%;justify-content:flex-start;flex-wrap:wrap}
+  .dispatch-stats{grid-template-columns:repeat(2,1fr)}
+  .dispatch-operations,.dispatch-lower-grid{grid-template-columns:1fr}
+  .dispatch-map{height:420px}
+  .dispatch-queue-card{max-height:none}
+  .live-trip-list{grid-template-columns:1fr}
+}
+
+@media (max-width:760px){
+  body.dispatch-offline .dispatch-shell{padding-top:29px}
+  .dispatch-main{padding-bottom:72px}
+  .dispatch-actions{gap:6px;flex-wrap:wrap;justify-content:flex-start}
+  .dispatch-ptt{order:3;width:100%;justify-content:space-between}
+  .dispatch-ptt .btn.ptt{flex:1}
+  #shiftButton,#newBookingButton{flex:1}
+  .dispatch-map{height:min(390px,52vh)}
+  .booking-drawer-panel{width:100vw;max-width:none}
+}
+
+@media (display-mode:standalone){
+  .dispatch-sidebar,.dispatch-topbar{padding-top:max(env(safe-area-inset-top),0px)}
+  .booking-drawer-panel{padding-bottom:max(24px,env(safe-area-inset-bottom))}
+}
