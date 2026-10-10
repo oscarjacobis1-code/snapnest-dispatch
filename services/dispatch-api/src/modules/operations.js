@@ -228,6 +228,51 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
     }));
   }
 
+  async function driverShiftSummary(driverId) {
+    const t = await tenant();
+    const shift = first(await db.request('driver_shifts', {
+      query: {
+        tenant_id: `eq.${t.id}`,
+        driver_id: `eq.${driverId}`,
+        select: 'id,started_at,ended_at',
+        order: 'started_at.desc',
+        limit: 1
+      }
+    }));
+    if (!shift) {
+      return { active: false, startedAt: null, endedAt: null, durationMinutes: 0, completed: 0, cancelled: 0, noShows: 0, trips: 0 };
+    }
+
+    const startMs = new Date(shift.started_at).getTime();
+    const endMs = shift.ended_at ? new Date(shift.ended_at).getTime() : Date.now();
+    const rows = await db.request('bookings', {
+      query: {
+        tenant_id: `eq.${t.id}`,
+        assigned_driver_id: `eq.${driverId}`,
+        select: 'id,status,assigned_at,completed_at,cancelled_at,no_show_at',
+        order: 'created_at.desc',
+        limit: 250
+      }
+    });
+    const inShift = rows.filter((row) => {
+      const at = row.assigned_at ? new Date(row.assigned_at).getTime() : NaN;
+      return Number.isFinite(at) && at >= startMs && at <= endMs;
+    });
+    const completed = inShift.filter((row) => row.status === 'completed').length;
+    const cancelled = inShift.filter((row) => row.status === 'cancelled').length;
+    const noShows = inShift.filter((row) => row.status === 'no_show').length;
+    return {
+      active: !shift.ended_at,
+      startedAt: shift.started_at,
+      endedAt: shift.ended_at || null,
+      durationMinutes: Math.max(0, Math.round((endMs - startMs) / 60000)),
+      completed,
+      cancelled,
+      noShows,
+      trips: completed + cancelled + noShows
+    };
+  }
+
   async function listCustomers(limit = 100) {
     const t = await tenant();
     return db.request('customer_profiles', {
@@ -300,6 +345,7 @@ export function createOperationsModule({ db, tenant, driverRows, bookingById, of
     requeueBooking,
     cancelBooking,
     driverHistory,
+    driverShiftSummary,
     listCustomers,
     createSupportTicket,
     listSupportTickets,
