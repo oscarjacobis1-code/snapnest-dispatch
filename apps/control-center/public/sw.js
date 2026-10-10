@@ -1,4 +1,4 @@
-const CACHE = 'snapnest-dispatch-shell-v13';
+const CACHE = 'snapnest-dispatch-shell-v14';
 const SHELL = [
   '/',
   '/index.html',
@@ -16,6 +16,8 @@ const SHELL = [
   '/live-trip-ui.js',
   '/pwa.js',
   '/manifest.json',
+  '/icons/snapnest-192.png',
+  '/icons/snapnest-512.png',
   '/modules/format.js',
   '/modules/bookings-ui.js',
   '/modules/fleet-ui.js',
@@ -58,7 +60,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const isStatic = /\.(?:css|js|json|html)$/i.test(url.pathname);
+  const isStatic = /\.(?:css|js|json|html|png)$/i.test(url.pathname);
   if (!isStatic) return;
 
   event.respondWith(
