@@ -68,6 +68,7 @@ export function createSupabaseStore(config) {
       status: row.status,
       createdAt: row.created_at,
       assignedAt: row.assigned_at,
+      arrivedAt: row.arrived_at,
       startedAt: row.started_at,
       completedAt: row.completed_at,
       assignedDriverId: row.assigned_driver_id,
@@ -193,6 +194,13 @@ export function createSupabaseStore(config) {
     return bookingById(bookingId);
   }
 
+  async function arriveTrip({ bookingId, driverId }) {
+    const t = await tenant();
+    await db.rpc('arrive_driver_trip', { p_tenant_id: t.id, p_booking_id: bookingId, p_driver_id: driverId });
+    await emit('booking.arrived', { bookingId, driverId });
+    return bookingById(bookingId);
+  }
+
   async function startTrip({ bookingId, driverId }) {
     const t = await tenant();
     await db.rpc('start_driver_trip', { p_tenant_id: t.id, p_booking_id: bookingId, p_driver_id: driverId });
@@ -241,7 +249,7 @@ export function createSupabaseStore(config) {
 
   return {
     mode: 'supabase', publicState, activeOfferForDriver, setNightMode, setDriverStatus, updateDriverLocation,
-    createBooking, respondToOffer, startTrip, completeTrip, expireOffers, sessionContext, login, refresh,
+    createBooking, respondToOffer, arriveTrip, startTrip, completeTrip, expireOffers, sessionContext, login, refresh,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
   };
 }
