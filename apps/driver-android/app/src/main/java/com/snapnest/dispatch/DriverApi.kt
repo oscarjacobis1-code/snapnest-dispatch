@@ -25,9 +25,11 @@ object DriverApi {
         val pickup: String,
         val destination: String,
         val passengerName: String,
+        val passengerPhone: String,
         val passengers: Int,
         val notes: String,
         val status: String,
+        val arrivedAt: String,
         val pickupLat: Double? = null,
         val pickupLng: Double? = null,
         val destinationLat: Double? = null,
@@ -193,9 +195,11 @@ object DriverApi {
             pickup = pickup?.optString("label").orEmpty(),
             destination = destination?.optString("label").orEmpty(),
             passengerName = booking.optString("passengerName", "Guest"),
+            passengerPhone = booking.optString("passengerPhone", ""),
             passengers = booking.optInt("passengers", 1),
             notes = booking.optString("notes", ""),
             status = booking.optString("status", "assigned"),
+            arrivedAt = booking.optString("arrivedAt", ""),
             pickupLat = nullableDouble(pickup, "lat"),
             pickupLng = nullableDouble(pickup, "lng"),
             destinationLat = nullableDouble(destination, "lat"),
@@ -227,7 +231,7 @@ object DriverApi {
                     val offeredTo = booking.optString("currentOfferDriverId")
                     if (offer == null && offeredTo == session.driverId) offer = parseOffer(booking)
                 }
-                "assigned", "in_progress" -> {
+                "assigned", "arrived", "in_progress" -> {
                     val assignedTo = booking.optString("assignedDriverId")
                     if (trip == null && assignedTo == session.driverId) trip = parseTrip(booking)
                 }
@@ -255,7 +259,7 @@ object DriverApi {
     }
 
     fun updateTrip(store: SessionStore, bookingId: String, action: String) {
-        require(action == "start" || action == "complete") { "Invalid trip action" }
+        require(action == "arrive" || action == "start" || action == "complete") { "Invalid trip action" }
         withRefresh(store) { session ->
             val conn = connection("${session.baseUrl}/api/bookings/$bookingId/$action", "POST", session.accessToken)
             conn.doOutput = true
