@@ -15,7 +15,7 @@ const SHELL = [
   '/operator-shift-ui.js',
   '/live-trip-ui.js',
   '/pwa.js',
-  '/manifest.webmanifest',
+  '/manifest.json',
   '/modules/format.js',
   '/modules/bookings-ui.js',
   '/modules/fleet-ui.js',
@@ -58,7 +58,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const isStatic = /\.(?:css|js|webmanifest|html)$/i.test(url.pathname);
+  const isStatic = /\.(?:css|js|json|html)$/i.test(url.pathname);
   if (!isStatic) return;
 
   event.respondWith(
