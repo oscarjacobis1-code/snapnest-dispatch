@@ -42,7 +42,7 @@ function offerNextDriver(booking) {
   emit('booking.offered', { bookingId: booking.id, driverId: driver.id, distanceKm: next.distanceKm, score: next.dispatchScore }); return driver;
 }
 export function createBooking(input) {
-  const booking = { id: `B${++sequence}`, tenantId: 'demo-base', source: input.source ?? 'web', passengerName: input.passengerName, passengerPhone: input.passengerPhone ?? '', passengers: input.passengers, notes: input.notes, pickup: input.pickup, destination: input.destination, status: BOOKING_STATUS.PENDING, createdAt: new Date().toISOString(), assignedAt: null, startedAt: null, completedAt: null, assignedDriverId: null, currentOfferDriverId: null, attemptedDriverIds: [] };
+  const booking = { id: `B${++sequence}`, tenantId: 'demo-base', source: input.source ?? 'web', passengerName: input.passengerName, passengerPhone: input.passengerPhone ?? '', passengers: input.passengers, notes: input.notes, pickup: input.pickup, destination: input.destination, status: BOOKING_STATUS.PENDING, createdAt: new Date().toISOString(), assignedAt: null, arrivedAt: null, startedAt: null, completedAt: null, assignedDriverId: null, currentOfferDriverId: null, attemptedDriverIds: [] };
   state.bookings.unshift(booking); emit('booking.created', { bookingId: booking.id, source: booking.source }); offerNextDriver(booking); return booking;
 }
 export function respondToOffer({ bookingId, driverId, accept }) {
@@ -52,10 +52,20 @@ export function respondToOffer({ bookingId, driverId, accept }) {
   if (accept) { booking.status = BOOKING_STATUS.ASSIGNED; booking.assignedDriverId = driver.id; booking.currentOfferDriverId = null; booking.assignedAt = new Date().toISOString(); driver.status = DRIVER_STATUS.BUSY; emit('booking.assigned', { bookingId, driverId }); return booking; }
   driver.status = DRIVER_STATUS.AVAILABLE; driver.recentDeclines = (driver.recentDeclines ?? 0) + 1; driver.availableSince = Date.now(); booking.currentOfferDriverId = null; emit('booking.declined', { bookingId, driverId }); offerNextDriver(booking); return booking;
 }
+export function arriveTrip({ bookingId, driverId }) {
+  const booking = state.bookings.find((b) => b.id === bookingId); if (!booking) throw new Error('Booking not found.');
+  if (booking.assignedDriverId !== driverId) throw new Error('Booking is not assigned to this driver.');
+  if (![BOOKING_STATUS.ASSIGNED, BOOKING_STATUS.ARRIVED].includes(booking.status)) throw new Error('Booking cannot be marked arrived.');
+  booking.status = BOOKING_STATUS.ARRIVED;
+  booking.arrivedAt = booking.arrivedAt || new Date().toISOString();
+  const driver = state.drivers.find((d) => d.id === driverId); if (driver) driver.status = DRIVER_STATUS.BUSY;
+  emit('booking.arrived', { bookingId, driverId });
+  return booking;
+}
 export function startTrip({ bookingId, driverId }) {
   const booking = state.bookings.find((b) => b.id === bookingId); if (!booking) throw new Error('Booking not found.');
   if (booking.assignedDriverId !== driverId) throw new Error('Booking is not assigned to this driver.');
-  if (![BOOKING_STATUS.ASSIGNED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) throw new Error('Booking cannot be started.');
+  if (![BOOKING_STATUS.ASSIGNED, BOOKING_STATUS.ARRIVED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) throw new Error('Booking cannot be started.');
   booking.status = BOOKING_STATUS.IN_PROGRESS;
   booking.startedAt = booking.startedAt || new Date().toISOString();
   const driver = state.drivers.find((d) => d.id === driverId); if (driver) driver.status = DRIVER_STATUS.BUSY;
@@ -65,7 +75,7 @@ export function startTrip({ bookingId, driverId }) {
 export function completeTrip({ bookingId, driverId }) {
   const booking = state.bookings.find((b) => b.id === bookingId); if (!booking) throw new Error('Booking not found.');
   if (booking.assignedDriverId !== driverId) throw new Error('Booking is not assigned to this driver.');
-  if (![BOOKING_STATUS.ASSIGNED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) throw new Error('Booking cannot be completed.');
+  if (![BOOKING_STATUS.ASSIGNED, BOOKING_STATUS.ARRIVED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) throw new Error('Booking cannot be completed.');
   booking.status = BOOKING_STATUS.COMPLETED;
   booking.startedAt = booking.startedAt || new Date().toISOString();
   booking.completedAt = new Date().toISOString();
