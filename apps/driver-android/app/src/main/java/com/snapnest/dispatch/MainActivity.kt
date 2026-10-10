@@ -24,6 +24,7 @@ import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
+import java.time.Instant
 import kotlin.math.max
 
 class MainActivity : Activity() {
@@ -513,10 +514,16 @@ class MainActivity : Activity() {
             }
             snapshot?.trip != null -> {
                 val trip = snapshot.trip
-                stateCard.addView(bigText(if (trip.status == "in_progress") "Trip in progress" else "Heading to pickup"))
+                val title = when (trip.status) {
+                    "in_progress" -> "Trip in progress"
+                    "arrived" -> "Waiting at pickup"
+                    else -> "Heading to pickup"
+                }
+                stateCard.addView(bigText(title))
                 stateCard.addView(routeLine("PICKUP", trip.pickup, GREEN))
                 stateCard.addView(routeLine("DESTINATION", trip.destination, ORANGE))
                 stateCard.addView(metaText(trip.passengerName))
+                if (trip.status == "arrived") stateCard.addView(metaText(waitDurationLabel(trip.arrivedAt)))
                 stateCard.addView(actionButton("RETURN TO HOME", true).apply {
                     setOnClickListener {
                         currentTab = TAB_HOME
@@ -742,28 +749,84 @@ class MainActivity : Activity() {
     }
 
     private fun renderTrip(trip: DriverApi.ActiveTrip) {
+        val arrived = trip.status == "arrived"
         val inProgress = trip.status == "in_progress"
-        headlineText?.text = if (inProgress) "Trip in progress" else "Heading to pickup"
-        sublineText?.text = if (inProgress) "Navigation and PTT stay available while you drive." else "Navigate to pickup, then start the trip."
+        headlineText?.text = when {
+            inProgress -> "Trip in progress"
+            arrived -> "Passenger pickup"
+            else -> "Heading to pickup"
+        }
+        sublineText?.text = when {
+            inProgress -> "Navigation and PTT stay available while you drive."
+            arrived -> waitDurationLabel(trip.arrivedAt)
+            else -> "Navigate to pickup, then confirm when you arrive."
+        }
         jobContainer?.removeAllViews()
-        addJobKicker(if (inProgress) "ON TRIP" else "ASSIGNED")
+        addJobKicker(when {
+            inProgress -> "ON TRIP"
+            arrived -> "AT PICKUP"
+            else -> "ASSIGNED"
+        })
         addJobRoute("PICKUP", trip.pickup, GREEN)
         addJobRoute("DESTINATION", trip.destination, ORANGE)
         addJobMeta("${trip.passengerName} · ${trip.passengers} passenger${if (trip.passengers == 1) "" else "s"}")
+        if (arrived) addJobMeta(waitDurationLabel(trip.arrivedAt))
         if (trip.notes.isNotBlank()) addJobMeta(trip.notes)
+        if (arrived && trip.passengerPhone.isNotBlank()) addPassengerContact(trip.passengerPhone)
 
+        secondaryButton?.visibility = View.GONE
         primaryButton?.apply {
-            visibility = View.VISIBLE
+            visibility = if (arrived) View.GONE else View.VISIBLE
             text = if (inProgress) "NAVIGATE TO DESTINATION" else "NAVIGATE TO PICKUP"
             setOnClickListener {
                 if (inProgress) navigate(trip.destinationLat, trip.destinationLng, trip.destination)
                 else navigate(trip.pickupLat, trip.pickupLng, trip.pickup)
             }
         }
-        secondaryButton?.visibility = View.GONE
-        slideAction = replaceSlideAction(if (inProgress) "SLIDE TO COMPLETE" else "SLIDE TO START") {
-            updateTrip(trip, if (inProgress) "complete" else "start")
+
+        val slideLabel = when {
+            inProgress -> "SLIDE TO COMPLETE"
+            arrived -> "SLIDE TO START"
+            else -> "SLIDE WHEN ARRIVED"
         }
+        val action = when {
+            inProgress -> "complete"
+            arrived -> "start"
+            else -> "arrive"
+        }
+        slideAction = replaceSlideAction(slideLabel) { updateTrip(trip, action) }
+    }
+
+    private fun addPassengerContact(phone: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        row.addView(actionButton("CALL PASSENGER", false).apply {
+            setOnClickListener { contactPassenger(phone, false) }
+        }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(6) })
+        row.addView(actionButton("MESSAGE", false).apply {
+            setOnClickListener { contactPassenger(phone, true) }
+        }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { leftMargin = dp(6) })
+        jobContainer?.addView(row)
+    }
+
+    private fun contactPassenger(phone: String, message: Boolean) {
+        if (phone.isBlank()) return
+        val uri = if (message) Uri.parse("smsto:${Uri.encode(phone)}") else Uri.parse("tel:${Uri.encode(phone)}")
+        val action = if (message) Intent.ACTION_SENDTO else Intent.ACTION_DIAL
+        runCatching { startActivity(Intent(action, uri)) }
+            .onFailure { if (::statusText.isInitialized) statusText.text = "No compatible phone app is available." }
+    }
+
+    private fun waitDurationLabel(arrivedAt: String): String {
+        if (arrivedAt.isBlank()) return "Waiting at pickup"
+        val elapsedSeconds = runCatching {
+            ((System.currentTimeMillis() - Instant.parse(arrivedAt).toEpochMilli()) / 1000L).coerceAtLeast(0L)
+        }.getOrDefault(0L)
+        val minutes = elapsedSeconds / 60
+        val seconds = elapsedSeconds % 60
+        return "Waiting at pickup · %02d:%02d".format(minutes, seconds)
     }
 
     private fun respondToOffer(offer: DriverApi.ActiveOffer, accept: Boolean) {
@@ -791,7 +854,11 @@ class MainActivity : Activity() {
     }
 
     private fun updateTrip(trip: DriverApi.ActiveTrip, action: String) {
-        statusText.text = if (action == "start") "Starting trip…" else "Completing trip…"
+        statusText.text = when (action) {
+            "arrive" -> "Marking you arrived…"
+            "start" -> "Starting trip…"
+            else -> "Completing trip…"
+        }
         primaryButton?.isEnabled = false
         Thread {
             runCatching { DriverApi.updateTrip(sessionStore, trip.bookingId, action) }
@@ -800,6 +867,11 @@ class MainActivity : Activity() {
                         if (action == "complete") {
                             getSystemService(NotificationManager::class.java).cancel(DriverLocationService.ACCEPTED_JOB_ID)
                             startForegroundService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_AVAILABLE))
+                        }
+                        statusText.text = when (action) {
+                            "arrive" -> "Arrived. Waiting for passenger."
+                            "start" -> "Trip started."
+                            else -> "Trip complete."
                         }
                         primaryButton?.isEnabled = true
                         refreshNow()
@@ -941,6 +1013,7 @@ class MainActivity : Activity() {
         val label = when {
             offer != null -> "NEW TRIP"
             trip?.status == "in_progress" -> "TRIP IN PROGRESS"
+            trip?.status == "arrived" -> "AT PICKUP"
             else -> "TO PICKUP"
         }
         web.evaluateJavascript("window.snapnestSetJob(${n(pickupLat)},${n(pickupLng)},${n(destinationLat)},${n(destinationLng)},'$label')", null)
