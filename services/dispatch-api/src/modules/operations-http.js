@@ -1,3 +1,10 @@
+import {
+  isAllowedSupportAttachmentRef,
+  readSupportImage,
+  signSupportAttachment,
+  uploadSupportAttachment
+} from './support-attachments.js';
+
 const DRIVER_NO_SHOW_WAIT_MS = 3 * 60_000;
 
 export async function handleOperationsRequest({
@@ -43,6 +50,36 @@ export async function handleOperationsRequest({
     return true;
   }
 
+  if (req.method === 'POST' && path === '/api/support/attachment') {
+    const context = await authContext(req);
+    if (!['driver', 'admin', 'dispatcher'].includes(context.membership?.role)) throw new HttpError(403, 'You do not have permission to upload support screenshots.');
+    const driverId = context.membership?.role === 'driver' ? context.driver?.id : null;
+    if (context.membership?.role === 'driver' && !driverId) throw new HttpError(403, 'Driver profile is required.');
+    const image = await readSupportImage(req);
+    const attachmentUrl = await uploadSupportAttachment({
+      tenantId: context.membership.tenant_id,
+      ownerId: driverId || context.user?.id || 'operator',
+      ...image
+    });
+    json(res, 201, { attachmentUrl });
+    return true;
+  }
+
+  const attachmentMatch = path.match(/^\/api\/support\/([^/]+)\/attachment$/);
+  if (req.method === 'GET' && attachmentMatch) {
+    const context = await authContext(req);
+    if (!['driver', 'admin', 'dispatcher'].includes(context.membership?.role)) throw new HttpError(403, 'You do not have permission to view support screenshots.');
+    const driverId = context.membership?.role === 'driver' ? context.driver?.id : null;
+    if (context.membership?.role === 'driver' && !driverId) throw new HttpError(403, 'Driver profile is required.');
+    const tickets = await store.listSupportTickets({ driverId: driverId || null, limit: 250 });
+    const ticket = tickets.find((item) => item.id === attachmentMatch[1]);
+    if (!ticket) throw new HttpError(404, 'Support ticket not found.');
+    if (!ticket.attachment_url) throw new HttpError(404, 'This support ticket has no screenshot.');
+    const signedUrl = await signSupportAttachment(ticket.attachment_url, 300);
+    json(res, 200, { url: signedUrl, expiresIn: 300 });
+    return true;
+  }
+
   if (req.method === 'GET' && path === '/api/support') {
     const context = await authContext(req);
     const driverId = context.membership?.role === 'driver' ? context.driver?.id : url.searchParams.get('driverId');
@@ -58,6 +95,11 @@ export async function handleOperationsRequest({
     const input = await body(req);
     const driverId = context.membership?.role === 'driver' ? context.driver?.id : (input.driverId || null);
     if (context.membership?.role === 'driver' && !driverId) throw new HttpError(403, 'Driver profile is required.');
+    const attachmentUrl = input.attachmentUrl || null;
+    const ownerId = context.membership?.role === 'driver' ? driverId : null;
+    if (attachmentUrl && !isAllowedSupportAttachmentRef(attachmentUrl, context.membership.tenant_id, ownerId)) {
+      throw new HttpError(400, 'Invalid screenshot reference for this account.');
+    }
     json(res, 201, await store.createSupportTicket({
       userId: context.user?.id || null,
       driverId,
@@ -66,7 +108,7 @@ export async function handleOperationsRequest({
       priority: input.priority,
       subject: input.subject,
       description: input.description,
-      attachmentUrl: input.attachmentUrl || null
+      attachmentUrl
     }));
     return true;
   }
