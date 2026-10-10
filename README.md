@@ -80,6 +80,6 @@ The Android driver build bakes in `https://snapnest-dispatch.onrender.com`; driv
 
 Live PTT is enabled only when Render has all three server-side LiveKit values: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`. No LiveKit secret or Supabase secret is compiled into the web or Android clients.
 
-Production WhatsApp and AI phone-call adapters remain outside this field-test release. The dispatcher control center, Supabase auth/storage, driver GPS, offer acceptance, trip lifecycle, and LiveKit PTT path are included.
+WhatsApp customer links and a signed Meta webhook inbox are available for operator-assisted intake. They do not automatically dispatch a chat message. See [security and WhatsApp setup](docs/SECURITY_AND_WHATSAPP.md) for configuration, controls and pilot limits. AI phone-call intake remains outside this field-test release.
 
 Built by **SnapNest Digital Solutions**.

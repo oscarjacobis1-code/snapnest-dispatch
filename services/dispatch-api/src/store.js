@@ -12,6 +12,7 @@ export const state = {
   bookings: [],
   customers: [],
   supportTickets: [],
+  communications: [],
   events: []
 };
 let sequence = 1000;
@@ -24,6 +25,14 @@ export function emit(type, payload) {
   return event;
 }
 export function publicState() { return { nightMode: state.nightMode, drivers: state.drivers, bookings: state.bookings, events: state.events.slice(0, 25) }; }
+export function recordWhatsAppMessage(message) {
+  if (state.communications.some((item) => item.external_id === message.externalId)) return false;
+  state.communications.unshift({ id: `W${++sequence}`, channel: 'whatsapp', direction: 'inbound', external_id: message.externalId, payload: message, created_at: new Date().toISOString() });
+  state.communications = state.communications.slice(0, 200);
+  emit('whatsapp.received', { sender: message.sender, type: message.type });
+  return true;
+}
+export function listWhatsAppMessages(limit = 50) { return state.communications.slice(0, Math.max(1, Math.min(100, Number(limit) || 50))); }
 export function getBooking(id) { const booking = state.bookings.find((b) => b.id === id); if (!booking) throw new Error('Booking not found.'); return booking; }
 export function setNightMode(enabled) { state.nightMode = Boolean(enabled); emit('night_mode.changed', { enabled: state.nightMode }); return state.nightMode; }
 export function setDriverStatus(driverId, status) {

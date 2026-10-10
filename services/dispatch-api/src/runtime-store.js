@@ -100,6 +100,8 @@ export function createRuntimeStore(env = process.env) {
       setDriverStatus,
       updateDriverLocation: async (id, location) => memory.updateDriverLocation(id, location),
       createBooking: async (input) => memory.createBooking(input),
+      recordWhatsAppMessage: async (input) => memory.recordWhatsAppMessage(input),
+      listWhatsAppMessages: async (limit) => memory.listWhatsAppMessages(limit),
       rescheduleBooking: async (input) => memory.rescheduleBooking(input),
       activateScheduledBookings,
       reserveScheduledBooking,

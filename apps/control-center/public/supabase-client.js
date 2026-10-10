@@ -20,6 +20,7 @@ async function memberContext(accessToken, userId) {
   if (membership.role === 'driver') {
     const drivers = await parse(await fetch(`${SUPABASE_URL}/rest/v1/drivers?select=id,tenant_id,display_name,vehicle_plate,status&auth_user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers }));
     driver = drivers?.[0] || null;
+    if (!driver) throw new Error('This driver account is not linked to a driver profile.');
   }
   return { membership, driver };
 }

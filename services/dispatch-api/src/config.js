@@ -14,6 +14,9 @@ export function runtimeConfig(env = process.env) {
     ].filter(([, value]) => !value).map(([key]) => key);
     throw new Error(`Production configuration incomplete: missing ${missing.join(', ')}`);
   }
+  if (production && String(env.DISPATCH_REQUIRE_AUTH ?? 'true').toLowerCase() === 'false') {
+    throw new Error('Production cannot disable dispatch authentication.');
+  }
 
   return {
     supabaseUrl,
