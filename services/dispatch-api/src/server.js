@@ -7,6 +7,7 @@ import { parseStructuredTaxiRequest } from './dispatch-engine.js';
 import { createRuntimeStore } from './runtime-store.js';
 import { createPttFloor } from './ptt/floor.js';
 import { createPttToken, liveKitPttConfig } from './ptt/livekit-provider.js';
+import { handleOperationsRequest } from './modules/operations-http.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = normalize(join(here, '../../../apps/control-center/public'));
@@ -141,7 +142,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/api/health') {
-      return json(res, 200, { ok: true, version: '0.3.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
+      return json(res, 200, { ok: true, version: '0.4.0', mode: store.mode, ptt: { provider: 'livekit', enabled: liveKitPttConfig().enabled } });
     }
 
     if (req.method === 'POST' && path === '/api/auth/login') {
@@ -186,6 +187,8 @@ const server = http.createServer(async (req, res) => {
       const context = await authContext(req);
       return json(res, 200, filterState(await store.publicState(), context));
     }
+
+    if (await handleOperationsRequest({ req, res, path, url, store, authContext, requireRole, requireDriverAccess, body, json, HttpError })) return;
 
     const activeOfferMatch = path.match(/^\/api\/drivers\/([^/]+)\/active-offer$/);
     if (req.method === 'GET' && activeOfferMatch) {
@@ -273,4 +276,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 setInterval(() => store.expireOffers().catch?.((error) => console.error('expireOffers:', error.message)), 1000).unref();
-server.listen(port, () => console.log(`SnapNest Dispatch v0.3 running on http://localhost:${port} (${store.mode})`));
+setInterval(() => store.activateScheduledBookings?.().catch?.((error) => console.error('activateScheduledBookings:', error.message)), 30_000).unref();
+server.listen(port, () => console.log(`SnapNest Dispatch v0.4 running on http://localhost:${port} (${store.mode})`));
